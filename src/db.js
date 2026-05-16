@@ -1,12 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const DB_KEY = '@stockai_products_v5';
+const DB_KEY = '@stockai_products_v2';
+const TRANSIT_ORDERS_KEY = '@stockai_transit_orders';
 
-// Abbiamo aggiunto 'unit' e 'max_threshold'
 const INITIAL_DATA = [
   { id: '1', name: 'Gin Mare', supplier_id: 'Forniture Rossi SpA', current_stock: 12, min_threshold: 5, max_threshold: 24, unit: 'bottiglie' },
   { id: '2', name: 'Vodka Belvedere', supplier_id: 'Forniture Rossi SpA', current_stock: 3, min_threshold: 6, max_threshold: 18, unit: 'bottiglie' },
-  { id: '3', name: 'Tonica Fever Tree', supplier_id: 'Bevande Locali Srl', current_stock: 20, min_threshold: 24, max_threshold: 100, unit: 'bottiglie' },
+  { id: '3', name: 'Tonica Fever Tree', supplier_id: 'Bevande Locali Srl', current_stock: 20, min_threshold: 24, max_threshold: 100, unit: 'u.' },
   { id: '4', name: 'Pomodori San Marzano', supplier_id: 'Ortofrutta Locale', current_stock: 5, min_threshold: 15, max_threshold: 30, unit: 'kg' },
   { id: '5', name: 'Basilico Fresco', supplier_id: 'Ortofrutta Locale', current_stock: 1, min_threshold: 3, max_threshold: 5, unit: 'kg' },
 ];
@@ -27,7 +27,6 @@ export const getProducts = async () => {
     const data = await AsyncStorage.getItem(DB_KEY);
     return data ? JSON.parse(data) : [];
   } catch (e) {
-    console.error('Errore lettura DB', e);
     return [];
   }
 };
@@ -43,18 +42,69 @@ export const updateProductStock = async (productId, quantityChange) => {
     });
     await AsyncStorage.setItem(DB_KEY, JSON.stringify(updatedProducts));
     return updatedProducts;
+  } catch (e) {}
+};
+
+// --- LOGICA ORDINI IN TRANSITO ---
+
+export const getTransitOrders = async () => {
+  try {
+    const data = await AsyncStorage.getItem(TRANSIT_ORDERS_KEY);
+    return data ? JSON.parse(data) : [];
   } catch (e) {
-    console.error('Errore aggiornamento DB', e);
+    return [];
   }
 };
 
-// NUOVA LOGICA: Genera gli ordini in base a chi è "in esaurimento" (<= 1.5 * min_threshold)
+export const addTransitOrder = async (order) => {
+  try {
+    const orders = await getTransitOrders();
+    const newOrder = { ...order, status: 'In Transito' };
+    orders.push(newOrder);
+    await AsyncStorage.setItem(TRANSIT_ORDERS_KEY, JSON.stringify(orders));
+  } catch (e) {}
+};
+
+export const completeTransitOrder = async (orderId, items) => {
+  try {
+    // 1. Rimuovi l'ordine dalla lista dei transiti
+    const orders = await getTransitOrders();
+    const updatedOrders = orders.filter(o => o.id !== orderId);
+    await AsyncStorage.setItem(TRANSIT_ORDERS_KEY, JSON.stringify(updatedOrders));
+
+    // 2. Aggiungi fisicamente le quantità al magazzino
+    const products = await getProducts();
+    let updatedProducts = [...products];
+    for (const item of items) {
+      updatedProducts = updatedProducts.map(p => {
+        if (p.id === item.id) {
+          return { ...p, current_stock: p.current_stock + item.orderQuantity };
+        }
+        return p;
+      });
+    }
+    await AsyncStorage.setItem(DB_KEY, JSON.stringify(updatedProducts));
+  } catch (e) {}
+};
+
+// --- LOGICA BOZZE ---
+
 export const getDraftOrders = async () => {
   const products = await getProducts();
+  const transitOrders = await getTransitOrders();
+  
+  // Trova i prodotti che stiamo GIÀ aspettando per non riordinarli
+  const productsInTransit = new Set();
+  transitOrders.forEach(order => {
+    order.items.forEach(item => productsInTransit.add(item.id));
+  });
+
   const ordersBySupplier = {};
 
   products.forEach(p => {
-    // Se il prodotto è sotto la soglia di allerta (giallo o peggio)
+    // Se è in transito, lo ignoriamo nella creazione della bozza
+    if (productsInTransit.has(p.id)) return;
+
     if (p.current_stock <= p.min_threshold * 1.5) {
       if (!ordersBySupplier[p.supplier_id]) {
         ordersBySupplier[p.supplier_id] = {
@@ -65,13 +115,9 @@ export const getDraftOrders = async () => {
           items: []
         };
       }
-      // Calcola quanto ordinare per arrivare al max_threshold
       const orderQty = Math.max(0, p.max_threshold - p.current_stock);
       if (orderQty > 0) {
-        ordersBySupplier[p.supplier_id].items.push({
-          ...p,
-          orderQuantity: orderQty
-        });
+        ordersBySupplier[p.supplier_id].items.push({ ...p, orderQuantity: orderQty });
       }
     }
   });

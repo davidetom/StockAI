@@ -2,15 +2,17 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, FlatList, TouchableOpacity, Modal, ScrollView, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { getDraftOrders, getProducts } from '../db';
+import { getDraftOrders, getTransitOrders, getProducts, addTransitOrder, completeTransitOrder } from '../db';
 import { useFocusEffect } from '@react-navigation/native';
 
 export default function OrdersScreen() {
-  const [orders, setOrders] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'drafts' | 'transit'>('drafts');
+  
+  const [draftOrders, setDraftOrders] = useState<any[]>([]);
+  const [transitOrders, setTransitOrders] = useState<any[]>([]);
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   
-  // Stati per i Modali
   const [activeOrder, setActiveOrder] = useState<any>(null);
   const [isEditModalVisible, setEditModalVisible] = useState(false);
   const [isPreviewModalVisible, setPreviewModalVisible] = useState(false);
@@ -21,9 +23,11 @@ export default function OrdersScreen() {
   );
 
   const loadData = async () => {
-    const draftOrders = await getDraftOrders();
+    const drafts = await getDraftOrders();
+    const transit = await getTransitOrders();
     const products = await getProducts();
-    setOrders(draftOrders);
+    setDraftOrders(drafts);
+    setTransitOrders(transit);
     setAllProducts(products);
   };
 
@@ -47,13 +51,26 @@ export default function OrdersScreen() {
     showToast("✅ Ordine copiato negli appunti");
   };
 
-  const handleSendWhatsApp = (order: any) => {
+  // L'ordine passa in transito!
+  const handleSendWhatsApp = async (order: any) => {
     const text = encodeURIComponent(generateOrderText(order));
     Linking.openURL(`whatsapp://send?text=${text}`).catch(() => {
       showToast("❌ WhatsApp non installato.");
     });
+    
+    await addTransitOrder(order);
+    await loadData();
+    
     setPreviewModalVisible(false);
-    showToast("🚀 Ordine inviato");
+    setActiveTab('transit'); // Spostiamo l'utente nella tab dei transiti per fargli vedere dove è finito
+    showToast("🚀 Ordine in transito!");
+  };
+
+  // La merce è arrivata!
+  const handleOrderDelivered = async (order: any) => {
+    await completeTransitOrder(order.id, order.items);
+    await loadData();
+    showToast("📦 Merce caricata in magazzino!");
   };
 
   const openEdit = (order: any) => {
@@ -62,7 +79,6 @@ export default function OrdersScreen() {
     setEditModalVisible(true);
   };
 
-  // Funzioni di Modifica Ordine
   const adjustEditQuantity = (idx: number, delta: number) => {
     const updated = { ...activeOrder };
     updated.items[idx].orderQuantity = Math.max(1, updated.items[idx].orderQuantity + delta);
@@ -87,24 +103,25 @@ export default function OrdersScreen() {
       deleteOrder();
       return;
     }
-    const newOrders = orders.map(o => o.id === activeOrder.id ? activeOrder : o);
-    setOrders(newOrders);
+    const newOrders = draftOrders.map(o => o.id === activeOrder.id ? activeOrder : o);
+    setDraftOrders(newOrders);
     setEditModalVisible(false);
     showToast("💾 Modifiche salvate");
   };
 
   const deleteOrder = () => {
-    const newOrders = orders.filter(o => o.id !== activeOrder?.id);
-    setOrders(newOrders);
+    const newOrders = draftOrders.filter(o => o.id !== activeOrder?.id);
+    setDraftOrders(newOrders);
     setEditModalVisible(false);
     showToast("🗑️ Ordine eliminato");
   };
 
-  // Calcola i prodotti disponibili da aggiungere a questo ordine
   const availableToAdd = activeOrder ? allProducts.filter(p => 
     p.supplier_id === activeOrder.supplierName && 
     !activeOrder.items.some((item: any) => item.id === p.id)
   ) : [];
+
+  const currentList = activeTab === 'drafts' ? draftOrders : transitOrders;
 
   const renderOrderItem = ({ item }: { item: any }) => (
     <View style={styles.card}>
@@ -113,7 +130,9 @@ export default function OrdersScreen() {
           <Text style={styles.orderId}>{item.id}</Text>
           <Text style={styles.orderDate}>Creato il {item.date}</Text>
         </View>
-        <View style={styles.badgeBozza}><Text style={styles.badgeBozzaText}>{item.status}</Text></View>
+        <View style={[styles.badge, activeTab === 'transit' ? styles.badgeTransit : styles.badgeDraft]}>
+          <Text style={[styles.badgeText, activeTab === 'transit' && {color: '#B95000'}]}>{item.status}</Text>
+        </View>
       </View>
       <Text style={styles.supplierTitle}>{item.supplierName.toUpperCase()}</Text>
       <View style={styles.itemsPreview}>
@@ -127,33 +146,60 @@ export default function OrdersScreen() {
           <Text style={styles.moreItemsText}>+{item.items.length - 3} altri articoli</Text>
         )}
       </View>
-      <View style={styles.actionsRow}>
-        <TouchableOpacity style={styles.btnOutline} onPress={() => handleCopy(item)}>
-          <Ionicons name="copy-outline" size={16} color="#000" style={{marginRight: 6}} />
-          <Text style={styles.btnOutlineText}>Copia</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.btnPrimary} onPress={() => openEdit(item)}>
-          <Ionicons name="pencil" size={16} color="#FFF" style={{marginRight: 6}} />
-          <Text style={styles.btnPrimaryText}>Modifica</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.btnDark} onPress={() => { setActiveOrder(item); setPreviewModalVisible(true); }}>
-          <Ionicons name="paper-plane-outline" size={16} color="#FFF" style={{marginRight: 6}} />
-          <Text style={styles.btnDarkText}>Vedi</Text>
-        </TouchableOpacity>
-      </View>
+      
+      {/* BOTTONI DIVERSI IN BASE ALLA TAB */}
+      {activeTab === 'drafts' ? (
+        <View style={styles.actionsRow}>
+          <TouchableOpacity style={styles.btnOutline} onPress={() => handleCopy(item)}>
+            <Ionicons name="copy-outline" size={16} color="#000" style={{marginRight: 6}} />
+            <Text style={styles.btnOutlineText}>Copia</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.btnPrimary} onPress={() => openEdit(item)}>
+            <Ionicons name="pencil" size={16} color="#FFF" style={{marginRight: 6}} />
+            <Text style={styles.btnPrimaryText}>Modifica</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.btnDark} onPress={() => { setActiveOrder(item); setPreviewModalVisible(true); }}>
+            <Ionicons name="paper-plane-outline" size={16} color="#FFF" style={{marginRight: 6}} />
+            <Text style={styles.btnDarkText}>Vedi</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.actionsRow}>
+          <TouchableOpacity style={styles.btnOutline} onPress={() => { setActiveOrder(item); setPreviewModalVisible(true); }}>
+            <Ionicons name="eye-outline" size={16} color="#000" style={{marginRight: 6}} />
+            <Text style={styles.btnOutlineText}>Vedi Ordine</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.btnPrimary, {backgroundColor: '#1E8E3E'}]} onPress={() => handleOrderDelivered(item)}>
+            <Ionicons name="checkmark-done" size={16} color="#FFF" style={{marginRight: 6}} />
+            <Text style={styles.btnPrimaryText}>Segna Consegnato</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Liste Ordini ({orders.length})</Text>
+        <Text style={styles.headerTitle}>Gestione Ordini</Text>
+      </View>
+
+      {/* SELETTORE TAB */}
+      <View style={styles.segmentContainer}>
+        <TouchableOpacity style={[styles.segmentBtn, activeTab === 'drafts' && styles.segmentActive]} onPress={() => setActiveTab('drafts')}>
+          <Text style={[styles.segmentText, activeTab === 'drafts' && styles.segmentTextActive]}>Da Effettuare ({draftOrders.length})</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.segmentBtn, activeTab === 'transit' && styles.segmentActive]} onPress={() => setActiveTab('transit')}>
+          <Text style={[styles.segmentText, activeTab === 'transit' && styles.segmentTextActive]}>In Transito ({transitOrders.length})</Text>
+        </TouchableOpacity>
       </View>
       
-      {orders.length === 0 ? (
-        <View style={styles.emptyState}><Text style={{color: '#666'}}>Nessun ordine in bozza.</Text></View>
+      {currentList.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Text style={{color: '#666'}}>Nessun ordine in questa sezione.</Text>
+        </View>
       ) : (
-        <FlatList data={orders} keyExtractor={item => item.id} renderItem={renderOrderItem} contentContainerStyle={styles.listContainer} />
+        <FlatList data={currentList} keyExtractor={item => item.id} renderItem={renderOrderItem} contentContainerStyle={styles.listContainer} />
       )}
 
       {toastMsg && (
@@ -195,27 +241,32 @@ export default function OrdersScreen() {
               </View>
             ))}
 
-            {/* SEZIONE AGGIUNGI PRODOTTO */}
-            {availableToAdd.length > 0 && (
-              !isAddingProduct ? (
-                <TouchableOpacity style={styles.btnAddProduct} onPress={() => setIsAddingProduct(true)}>
-                  <Ionicons name="add-outline" size={20} color="#0052FF" />
-                  <Text style={styles.btnAddProductText}>Aggiungi prodotto</Text>
-                </TouchableOpacity>
-              ) : (
-                <View style={styles.addProductsList}>
-                  <Text style={styles.addProductsTitle}>Seleziona prodotto:</Text>
-                  {availableToAdd.map((p, idx) => (
+            {!isAddingProduct ? (
+              <TouchableOpacity style={styles.btnAddProduct} onPress={() => setIsAddingProduct(true)}>
+                <Ionicons name="add-outline" size={20} color="#0052FF" />
+                <Text style={styles.btnAddProductText}>Aggiungi prodotto</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.addProductsList}>
+                <Text style={styles.addProductsTitle}>Seleziona prodotto:</Text>
+                
+                {availableToAdd.length > 0 ? (
+                  availableToAdd.map((p, idx) => (
                     <TouchableOpacity key={idx} style={styles.addProductItem} onPress={() => addEditItem(p)}>
                       <Text>{p.name}</Text>
                       <Ionicons name="add-circle-outline" size={24} color="#0052FF" />
                     </TouchableOpacity>
-                  ))}
-                  <TouchableOpacity style={{marginTop: 12, alignItems: 'center'}} onPress={() => setIsAddingProduct(false)}>
-                    <Text style={{color: '#666'}}>Annulla</Text>
-                  </TouchableOpacity>
-                </View>
-              )
+                  ))
+                ) : (
+                  <Text style={{color: '#666', fontStyle: 'italic', paddingVertical: 8, textAlign: 'center'}}>
+                    Tutti i prodotti del fornitore sono già nell'ordine.
+                  </Text>
+                )}
+                
+                <TouchableOpacity style={{marginTop: 12, alignItems: 'center'}} onPress={() => setIsAddingProduct(false)}>
+                  <Text style={{color: '#666', fontWeight: 'bold'}}>Chiudi</Text>
+                </TouchableOpacity>
+              </View>
             )}
           </ScrollView>
 
@@ -232,7 +283,7 @@ export default function OrdersScreen() {
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setPreviewModalVisible(false)}><Ionicons name="chevron-back" size={28} color="#000" /></TouchableOpacity>
-            <Text style={styles.modalTitle}>Invia ordine</Text>
+            <Text style={styles.modalTitle}>{activeTab === 'drafts' ? 'Invia ordine' : 'Dettaglio ordine'}</Text>
             <View style={{width: 28}} />
           </View>
           
@@ -246,18 +297,20 @@ export default function OrdersScreen() {
               </View>
             </View>
 
-            <Text style={styles.sectionLabel}>ANTEPRIMA MESSAGGIO</Text>
+            <Text style={styles.sectionLabel}>MESSAGGIO</Text>
             <View style={styles.previewTextBox}>
               <Text style={{fontSize: 15, lineHeight: 22}}>{activeOrder && generateOrderText(activeOrder)}</Text>
             </View>
           </ScrollView>
 
-          <View style={styles.modalFooter}>
-             <TouchableOpacity style={[styles.btnDark, { flex: 0, width: '100%', paddingVertical: 16, justifyContent: 'center', flexDirection: 'row'}]} onPress={() => handleSendWhatsApp(activeOrder)}>
-                <Ionicons name="logo-whatsapp" size={20} color="#FFF" style={{marginRight: 8}} />
-                <Text style={[styles.btnDarkText, {fontSize: 16}]}>Invia su WhatsApp</Text>
-             </TouchableOpacity>
-          </View>
+          {activeTab === 'drafts' && (
+            <View style={styles.modalFooter}>
+              <TouchableOpacity style={[styles.btnDark, { flex: 0, width: '100%', paddingVertical: 16, justifyContent: 'center', flexDirection: 'row'}]} onPress={() => handleSendWhatsApp(activeOrder)}>
+                  <Ionicons name="logo-whatsapp" size={20} color="#FFF" style={{marginRight: 8}} />
+                  <Text style={[styles.btnDarkText, {fontSize: 16}]}>Invia su WhatsApp</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </SafeAreaView>
       </Modal>
     </SafeAreaView>
@@ -268,6 +321,13 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#F8F9FA' },
   header: { padding: 20, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderColor: '#eee' },
   headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#000' },
+  
+  segmentContainer: { flexDirection: 'row', backgroundColor: '#FFF', borderBottomWidth: 1, borderColor: '#eee' },
+  segmentBtn: { flex: 1, paddingVertical: 14, alignItems: 'center', borderBottomWidth: 2, borderColor: 'transparent' },
+  segmentActive: { borderColor: '#0052FF' },
+  segmentText: { fontWeight: '600', color: '#8E8E93' },
+  segmentTextActive: { color: '#0052FF' },
+
   listContainer: { padding: 16 },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   
@@ -275,8 +335,10 @@ const styles = StyleSheet.create({
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
   orderId: { fontSize: 16, fontWeight: 'bold', color: '#111' },
   orderDate: { fontSize: 12, color: '#666', marginTop: 2 },
-  badgeBozza: { backgroundColor: '#E8F0FE', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, height: 24, justifyContent: 'center' },
-  badgeBozzaText: { color: '#1A73E8', fontSize: 11, fontWeight: 'bold' },
+  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, height: 24, justifyContent: 'center' },
+  badgeDraft: { backgroundColor: '#E8F0FE' },
+  badgeTransit: { backgroundColor: '#FEF0DB' },
+  badgeText: { color: '#1A73E8', fontSize: 11, fontWeight: 'bold' },
   
   supplierTitle: { fontSize: 12, color: '#666', letterSpacing: 1, marginBottom: 12, borderBottomWidth: 1, borderBottomColor: '#F0F0F0', paddingBottom: 8 },
   itemsPreview: { marginBottom: 16 },
@@ -293,7 +355,7 @@ const styles = StyleSheet.create({
   btnDark: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 8, backgroundColor: '#0B132B' },
   btnDarkText: { fontWeight: '600', color: '#FFF' },
 
-  toastContainer: { position: 'absolute', bottom: 100, alignSelf: 'center', backgroundColor: '#333', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 24, elevation: 5 },
+  toastContainer: { position: 'absolute', bottom: 20, alignSelf: 'center', backgroundColor: '#333', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 24, elevation: 5 },
   toastText: { color: '#FFF', fontWeight: 'bold' },
 
   modalContainer: { flex: 1, backgroundColor: '#F8F9FA' },
@@ -308,7 +370,7 @@ const styles = StyleSheet.create({
   stepperBtn: { paddingHorizontal: 12, paddingVertical: 8 },
   stepperText: { fontSize: 18, fontWeight: 'bold' },
   stepperValue: { fontWeight: 'bold', minWidth: 20, textAlign: 'center' },
-  editUnit: { marginLeft: 8, color: '#666', width: 30 },
+  editUnit: { marginLeft: 8, color: '#666', width: 45 },
   removeBtn: { padding: 8, marginLeft: 4 },
 
   btnAddProduct: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, marginTop: 8, borderStyle: 'dashed', borderWidth: 1, borderColor: '#0052FF', borderRadius: 8 },
