@@ -1,12 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const DB_KEY = '@stockai_products';
+const DB_KEY = '@stockai_products_v5';
 
-// Dati iniziali di test (simulazione del tuo CSV)
+// Abbiamo aggiunto 'unit' e 'max_threshold'
 const INITIAL_DATA = [
-  { id: '1', name: 'Gin Mare', supplier_id: 'sup-1', current_stock: 12, min_threshold: 5, max_threshold: 24, manual_status_override: null },
-  { id: '2', name: 'Vodka Belvedere', supplier_id: 'sup-1', current_stock: 3, min_threshold: 6, max_threshold: 18, manual_status_override: 'YELLOW' },
-  { id: '3', name: 'Tonica Fever Tree', supplier_id: 'sup-2', current_stock: 48, min_threshold: 24, max_threshold: 100, manual_status_override: 'GREEN' },
+  { id: '1', name: 'Gin Mare', supplier_id: 'Forniture Rossi SpA', current_stock: 12, min_threshold: 5, max_threshold: 24, unit: 'bottiglie' },
+  { id: '2', name: 'Vodka Belvedere', supplier_id: 'Forniture Rossi SpA', current_stock: 3, min_threshold: 6, max_threshold: 18, unit: 'bottiglie' },
+  { id: '3', name: 'Tonica Fever Tree', supplier_id: 'Bevande Locali Srl', current_stock: 20, min_threshold: 24, max_threshold: 100, unit: 'bottiglie' },
+  { id: '4', name: 'Pomodori San Marzano', supplier_id: 'Ortofrutta Locale', current_stock: 5, min_threshold: 15, max_threshold: 30, unit: 'kg' },
+  { id: '5', name: 'Basilico Fresco', supplier_id: 'Ortofrutta Locale', current_stock: 1, min_threshold: 3, max_threshold: 5, unit: 'kg' },
 ];
 
 export const initDB = async () => {
@@ -44,4 +46,35 @@ export const updateProductStock = async (productId, quantityChange) => {
   } catch (e) {
     console.error('Errore aggiornamento DB', e);
   }
+};
+
+// NUOVA LOGICA: Genera gli ordini in base a chi è "in esaurimento" (<= 1.5 * min_threshold)
+export const getDraftOrders = async () => {
+  const products = await getProducts();
+  const ordersBySupplier = {};
+
+  products.forEach(p => {
+    // Se il prodotto è sotto la soglia di allerta (giallo o peggio)
+    if (p.current_stock <= p.min_threshold * 1.5) {
+      if (!ordersBySupplier[p.supplier_id]) {
+        ordersBySupplier[p.supplier_id] = {
+          id: `ORD-${new Date().getFullYear()}-${Math.floor(Math.random() * 1000)}`,
+          supplierName: p.supplier_id,
+          date: new Date().toLocaleDateString('it-IT', { day: 'numeric', month: 'long' }),
+          status: 'Bozza',
+          items: []
+        };
+      }
+      // Calcola quanto ordinare per arrivare al max_threshold
+      const orderQty = Math.max(0, p.max_threshold - p.current_stock);
+      if (orderQty > 0) {
+        ordersBySupplier[p.supplier_id].items.push({
+          ...p,
+          orderQuantity: orderQty
+        });
+      }
+    }
+  });
+
+  return Object.values(ordersBySupplier);
 };

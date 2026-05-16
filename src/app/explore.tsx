@@ -30,9 +30,6 @@ export default function WarehouseScreen() {
       statusConfig = { bg: '#E8F0FE', text: '#1A73E8', label: 'In esaurim.', icon: 'calendar-outline' };
     }
 
-    // 2. Mock del fornitore (nel DB abbiamo solo l'ID, fingiamo di avere i nomi veri)
-    const supplierName = item.supplier_id === 'sup-1' ? 'Ruggiero S.p.A.' : 'Olearia F.lli Manca';
-
     return (
       <View style={styles.card}>
         {/* Sinistra: Immagine Prodotto (Placeholder) */}
@@ -43,7 +40,7 @@ export default function WarehouseScreen() {
         {/* Centro: Info Prodotto */}
         <View style={styles.infoContainer}>
           <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
-          <Text style={styles.supplierText} numberOfLines={1}>Fornitore: {supplierName}</Text>
+          <Text style={styles.supplierText} numberOfLines={2}>{item.supplier_id}</Text>
         </View>
 
         {/* Destra: Badge Stato */}
@@ -54,7 +51,7 @@ export default function WarehouseScreen() {
             <Text style={[styles.badgeLabel, { color: statusConfig.text }]}>{statusConfig.label}</Text>
           </View>
           <Text style={[styles.badgeQuantity, { color: statusConfig.text }]}>
-            {item.current_stock} u.
+            {item.current_stock} {item.unit}
           </Text>
         </View>
       </View>

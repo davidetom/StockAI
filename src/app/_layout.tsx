@@ -44,6 +44,15 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <Ionicons name="cube-outline" size={24} color={color} />,
         }}
       />
+
+      {/* Schermata 3: Ordini */}
+      <Tabs.Screen
+        name="orders"
+        options={{
+          title: 'Ordini',
+          tabBarIcon: ({ color }) => <Ionicons name="receipt-outline" size={24} color={color} />,
+        }}
+      />
     </Tabs>
   );
 }
