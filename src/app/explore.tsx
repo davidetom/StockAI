@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Text, FlatList, StyleSheet, SafeAreaView, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { getProducts } from '../db';
 import { useFocusEffect } from '@react-navigation/native';
 
@@ -18,29 +19,43 @@ export default function WarehouseScreen() {
   };
 
   const renderItem = ({ item }: { item: any }) => {
-    // Logica per il colore dello stato
-    let statusColor = '#4CAF50'; // Verde
-    if (item.current_stock <= item.min_threshold) {
-      statusColor = '#F44336'; // Rosso (Sotto scorta)
+    // 1. Logica per lo stato e i colori basata sul tuo template
+    let statusConfig = { bg: '#E6F4EA', text: '#1E8E3E', label: 'Sicuro', icon: 'shield-checkmark-outline' };
+
+    if (item.current_stock === 0) {
+      statusConfig = { bg: '#F1F3F4', text: '#5F6368', label: 'Non disp.', icon: 'ban-outline' };
+    } else if (item.current_stock <= item.min_threshold) {
+      statusConfig = { bg: '#FCE8E6', text: '#D93025', label: 'Critico', icon: 'warning-outline' };
     } else if (item.current_stock <= item.min_threshold * 1.5) {
-      statusColor = '#FFC107'; // Giallo (In esaurimento)
+      statusConfig = { bg: '#E8F0FE', text: '#1A73E8', label: 'In esaurim.', icon: 'calendar-outline' };
     }
+
+    // 2. Mock del fornitore (nel DB abbiamo solo l'ID, fingiamo di avere i nomi veri)
+    const supplierName = item.supplier_id === 'sup-1' ? 'Ruggiero S.p.A.' : 'Olearia F.lli Manca';
 
     return (
       <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.title}>{item.name}</Text>
-          <View style={[styles.statusIndicator, { backgroundColor: statusColor }]} />
+        {/* Sinistra: Immagine Prodotto (Placeholder) */}
+        <View style={styles.imagePlaceholder}>
+          <Ionicons name="image-outline" size={24} color="#B0B0B0" />
         </View>
-        <View style={styles.cardBody}>
-          <View style={styles.stockInfo}>
-            <Text style={styles.label}>Giacenza</Text>
-            <Text style={styles.stockValue}>{item.current_stock}</Text>
+
+        {/* Centro: Info Prodotto */}
+        <View style={styles.infoContainer}>
+          <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
+          <Text style={styles.supplierText} numberOfLines={1}>Fornitore: {supplierName}</Text>
+        </View>
+
+        {/* Destra: Badge Stato */}
+        <View style={[styles.badge, { backgroundColor: statusConfig.bg }]}>
+          <View style={styles.badgeHeader}>
+            {/* @ts-ignore */}
+            <Ionicons name={statusConfig.icon} size={12} color={statusConfig.text} style={{marginRight: 4}} />
+            <Text style={[styles.badgeLabel, { color: statusConfig.text }]}>{statusConfig.label}</Text>
           </View>
-          <View style={styles.stockInfo}>
-            <Text style={styles.label}>Soglia Minima</Text>
-            <Text style={styles.stockMin}>{item.min_threshold}</Text>
-          </View>
+          <Text style={[styles.badgeQuantity, { color: statusConfig.text }]}>
+            {item.current_stock} u.
+          </Text>
         </View>
       </View>
     );
@@ -49,30 +64,42 @@ export default function WarehouseScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Inventario</Text>
+        <Ionicons name="menu-outline" size={28} color="#000" />
+        <Text style={styles.headerTitle}>Magazzino</Text>
+        <View style={styles.headerIcons}>
+          <Ionicons name="search-outline" size={22} color="#000" style={styles.iconSpaced} />
+          <Ionicons name="person-circle-outline" size={24} color="#000" />
+        </View>
       </View>
+      
       <FlatList
         data={products}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         contentContainerStyle={styles.listContainer}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F8F9FA' },
-  header: { padding: 20, backgroundColor: '#0B132B', borderBottomWidth: 1, borderColor: '#eee' },
-  headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#FFFFFF' },
-  listContainer: { padding: 16 },
-  card: { backgroundColor: '#FFFFFF', padding: 16, marginBottom: 12, borderRadius: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 3, borderWidth: 1, borderColor: '#F0F0F0' },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  title: { fontSize: 18, fontWeight: '600', color: '#1C2541' },
-  statusIndicator: { width: 12, height: 12, borderRadius: 6 },
-  cardBody: { flexDirection: 'row', justifyContent: 'flex-start', gap: 24 },
-  stockInfo: { alignItems: 'flex-start' },
-  label: { fontSize: 12, color: '#6C757D', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
-  stockValue: { fontSize: 20, fontWeight: 'bold', color: '#0B132B' },
-  stockMin: { fontSize: 16, fontWeight: '500', color: '#6C757D' }
+  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderColor: '#F0F0F0' },
+  headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#000' },
+  headerIcons: { flexDirection: 'row', alignItems: 'center' },
+  iconSpaced: { marginRight: 16 },
+  listContainer: { paddingBottom: 20 },
+  separator: { height: 1, backgroundColor: '#F0F0F0', marginHorizontal: 16 },
+  
+  card: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: '#FFFFFF' },
+  imagePlaceholder: { width: 50, height: 50, borderRadius: 10, backgroundColor: '#F5F5F5', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#EAEAEA' },
+  infoContainer: { flex: 1, marginLeft: 16, marginRight: 12 },
+  productName: { fontSize: 15, fontWeight: '700', color: '#1A1A1A', marginBottom: 4 },
+  supplierText: { fontSize: 13, color: '#757575' },
+  
+  badge: { paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, minWidth: 90, alignItems: 'center' },
+  badgeHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  badgeLabel: { fontSize: 11, fontWeight: '600' },
+  badgeQuantity: { fontSize: 14, fontWeight: '700' }
 });

@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // INSERISCI QUI LA TUA CHIAVE API DI GOOGLE
-const API_KEY = 'AIzaSyAimVU6_uJEiMiKrlpe5lF1YAbxRp31m7I'; 
+const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY; 
 const genAI = new GoogleGenerativeAI(API_KEY);
 
 export const parseInventoryIntent = async (userMessage, currentProducts) => {

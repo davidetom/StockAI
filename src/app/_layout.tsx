@@ -1,23 +1,49 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import React, { useEffect } from 'react'; // <-- Ho aggiunto useEffect qui
-import { useColorScheme } from 'react-native';
-
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
+import React, { useEffect } from 'react';
+import { Tabs } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { initDB } from '../db';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
   // Inizializziamo il DB quando si avvia l'app
   useEffect(() => {
     initDB();
   }, []);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <AppTabs />
-    </ThemeProvider>
+    <Tabs
+      screenOptions={{
+        tabBarStyle: {
+          backgroundColor: '#FFFFFF',
+          borderTopWidth: 1,
+          borderTopColor: '#F0F0F0',
+          height: 85, // Altezza comoda per includere il testo
+          paddingBottom: 25, // Spazio per la "home bar" di iPhone
+          paddingTop: 10,
+          elevation: 0, // Rimuove l'ombra su Android
+          shadowOpacity: 0, // Rimuove l'ombra su iOS
+        },
+        tabBarActiveTintColor: '#0052FF', // Blu acceso del template
+        tabBarInactiveTintColor: '#8E8E93', // Grigio spento
+        headerShown: false, // Nascondiamo l'header di default perché usiamo i nostri
+      }}>
+      
+      {/* Schermata 1: Chat */}
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Chat IA',
+          tabBarIcon: ({ color }) => <Ionicons name="chatbox-ellipses-outline" size={24} color={color} />,
+        }}
+      />
+      
+      {/* Schermata 2: Magazzino */}
+      <Tabs.Screen
+        name="explore"
+        options={{
+          title: 'Magazzino',
+          tabBarIcon: ({ color }) => <Ionicons name="cube-outline" size={24} color={color} />,
+        }}
+      />
+    </Tabs>
   );
 }
