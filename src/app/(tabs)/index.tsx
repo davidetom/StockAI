@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, TextInput, TouchableOpacity, FlatList, Text, StyleSheet, KeyboardAvoidingView, Platform, SafeAreaView, ActivityIndicator, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { parseInventoryIntent } from '../ai';
-import { getProducts, updateProductStock } from '../db';
+import { parseInventoryIntent } from '../../ai';
+import { getProducts, updateProductStock } from '../../db';
 import { useFocusEffect } from '@react-navigation/native';
 
 export default function ChatScreen() {

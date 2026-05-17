@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
-import { Text, FlatList, StyleSheet, SafeAreaView, View } from 'react-native';
+import { Text, FlatList, StyleSheet, SafeAreaView, View, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getProducts } from '../db';
+import { getProducts } from '../../db';
 import { useFocusEffect } from '@react-navigation/native';
+import { useAuth } from '../../../auth';
 
 export default function WarehouseScreen() {
   const [products, setProducts] = useState([]);
+
+  const { logout } = useAuth();
 
   useFocusEffect(
     React.useCallback(() => {
@@ -65,7 +68,11 @@ export default function WarehouseScreen() {
         <Text style={styles.headerTitle}>Magazzino</Text>
         <View style={styles.headerIcons}>
           <Ionicons name="search-outline" size={22} color="#000" style={styles.iconSpaced} />
-          <Ionicons name="person-circle-outline" size={24} color="#000" />
+          
+          {/* Tasto Logout Nascosto/Integrato nell'header */}
+          <TouchableOpacity onPress={logout}>
+            <Ionicons name="log-out-outline" size={26} color="#D93025" />
+          </TouchableOpacity>
         </View>
       </View>
       

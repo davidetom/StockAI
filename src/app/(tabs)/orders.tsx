@@ -2,10 +2,14 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, FlatList, TouchableOpacity, Modal, ScrollView, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { getDraftOrders, getTransitOrders, getProducts, addTransitOrder, completeTransitOrder } from '../db';
+import { getDraftOrders, getTransitOrders, getProducts, addTransitOrder, completeTransitOrder } from '../../db';
 import { useFocusEffect } from '@react-navigation/native';
+import { useAuth } from '../../../auth';
 
 export default function OrdersScreen() {
+  const { user } = useAuth();
+  const isManager = user?.role === 'MANAGER';
+
   const [activeTab, setActiveTab] = useState<'drafts' | 'transit'>('drafts');
   
   const [draftOrders, setDraftOrders] = useState<any[]>([]);
@@ -154,25 +158,36 @@ export default function OrdersScreen() {
             <Ionicons name="copy-outline" size={16} color="#000" style={{marginRight: 6}} />
             <Text style={styles.btnOutlineText}>Copia</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.btnPrimary} onPress={() => openEdit(item)}>
-            <Ionicons name="pencil" size={16} color="#FFF" style={{marginRight: 6}} />
-            <Text style={styles.btnPrimaryText}>Modifica</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.btnDark} onPress={() => { setActiveOrder(item); setPreviewModalVisible(true); }}>
-            <Ionicons name="paper-plane-outline" size={16} color="#FFF" style={{marginRight: 6}} />
-            <Text style={styles.btnDarkText}>Vedi</Text>
-          </TouchableOpacity>
+          
+          {/* Mostriamo questi bottoni SOLO se è MANAGER */}
+          {isManager && (
+            <>
+              <TouchableOpacity style={styles.btnPrimary} onPress={() => openEdit(item)}>
+                <Ionicons name="pencil" size={16} color="#FFF" style={{marginRight: 6}} />
+                <Text style={styles.btnPrimaryText}>Modifica</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.btnDark} onPress={() => { setActiveOrder(item); setPreviewModalVisible(true); }}>
+                <Ionicons name="paper-plane-outline" size={16} color="#FFF" style={{marginRight: 6}} />
+                <Text style={styles.btnDarkText}>Vedi</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       ) : (
         <View style={styles.actionsRow}>
+          {/* Lo Staff può solo visualizzare cosa è in transito */}
           <TouchableOpacity style={styles.btnOutline} onPress={() => { setActiveOrder(item); setPreviewModalVisible(true); }}>
             <Ionicons name="eye-outline" size={16} color="#000" style={{marginRight: 6}} />
             <Text style={styles.btnOutlineText}>Vedi Ordine</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.btnPrimary, {backgroundColor: '#1E8E3E'}]} onPress={() => handleOrderDelivered(item)}>
-            <Ionicons name="checkmark-done" size={16} color="#FFF" style={{marginRight: 6}} />
-            <Text style={styles.btnPrimaryText}>Segna Consegnato</Text>
-          </TouchableOpacity>
+          
+          {/* Solo il MANAGER può confermare l'arrivo della merce */}
+          {isManager && (
+            <TouchableOpacity style={[styles.btnPrimary, {backgroundColor: '#1E8E3E'}]} onPress={() => handleOrderDelivered(item)}>
+              <Ionicons name="checkmark-done" size={16} color="#FFF" style={{marginRight: 6}} />
+              <Text style={styles.btnPrimaryText}>Segna Consegnato</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </View>

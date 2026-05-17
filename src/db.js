@@ -124,3 +124,38 @@ export const getDraftOrders = async () => {
 
   return Object.values(ordersBySupplier);
 };
+
+// --- LOGICA AUTENTICAZIONE ---
+const AUTH_KEY = '@stockai_auth_user';
+
+export const loginUser = async (role) => {
+  try {
+    // Creiamo un utente fittizio basato sul pulsante premuto
+    const user = {
+      id: role === 'MANAGER' ? 'manager_1' : 'staff_1',
+      role: role, // 'MANAGER' o 'STAFF'
+      name: role === 'MANAGER' ? 'Gestore' : 'Cameriere',
+    };
+    await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(user));
+    return user;
+  } catch (e) {
+    console.error('Errore durante il login', e);
+  }
+};
+
+export const getAuthUser = async () => {
+  try {
+    const data = await AsyncStorage.getItem(AUTH_KEY);
+    return data ? JSON.parse(data) : null;
+  } catch (e) {
+    return null;
+  }
+};
+
+export const logoutUser = async () => {
+  try {
+    await AsyncStorage.removeItem(AUTH_KEY);
+  } catch (e) {
+    console.error('Errore durante il logout', e);
+  }
+};

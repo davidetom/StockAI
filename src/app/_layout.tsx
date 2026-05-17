@@ -1,58 +1,46 @@
 import React, { useEffect } from 'react';
-import { Tabs } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Stack, useRouter, useSegments } from 'expo-router';
+import { AuthProvider, useAuth } from '../../auth'; 
 import { initDB } from '../db';
 
-export default function TabLayout() {
-  // Inizializziamo il DB quando si avvia l'app
+// Componente per proteggere le rotte
+function RootLayoutNav() {
+  const { user, isLoading } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
+
   useEffect(() => {
     initDB();
   }, []);
 
-  return (
-    <Tabs
-      screenOptions={{
-        tabBarStyle: {
-          backgroundColor: '#FFFFFF',
-          borderTopWidth: 1,
-          borderTopColor: '#F0F0F0',
-          height: 85, // Altezza comoda per includere il testo
-          paddingBottom: 25, // Spazio per la "home bar" di iPhone
-          paddingTop: 10,
-          elevation: 0, // Rimuove l'ombra su Android
-          shadowOpacity: 0, // Rimuove l'ombra su iOS
-        },
-        tabBarActiveTintColor: '#0052FF', // Blu acceso del template
-        tabBarInactiveTintColor: '#8E8E93', // Grigio spento
-        headerShown: false, // Nascondiamo l'header di default perché usiamo i nostri
-      }}>
-      
-      {/* Schermata 1: Chat */}
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Chat IA',
-          tabBarIcon: ({ color }) => <Ionicons name="chatbox-ellipses-outline" size={24} color={color} />,
-        }}
-      />
-      
-      {/* Schermata 2: Magazzino */}
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: 'Magazzino',
-          tabBarIcon: ({ color }) => <Ionicons name="cube-outline" size={24} color={color} />,
-        }}
-      />
+  useEffect(() => {
+    if (isLoading) return;
 
-      {/* Schermata 3: Ordini */}
-      <Tabs.Screen
-        name="orders"
-        options={{
-          title: 'Ordini',
-          tabBarIcon: ({ color }) => <Ionicons name="receipt-outline" size={24} color={color} />,
-        }}
-      />
-    </Tabs>
+    // Verifichiamo se l'utente si trova fisicamente sulla pagina di login
+    const isLoginScreen = segments[0] === 'login';
+
+    if (!user && !isLoginScreen) {
+      // Se NON c'è un utente, e NON siamo sul login -> forza il login
+      router.replace('/login' as any);
+    } else if (user && isLoginScreen) {
+      // Se c'è un utente, ma è incastrato sulla pagina di login -> forza la Home
+      router.replace('/' as any);
+    }
+  }, [user, isLoading, segments]);
+
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="login" options={{ headerShown: false }} />
+    </Stack>
+  );
+}
+
+// Avvolgiamo tutto nel provider
+export default function RootLayout() {
+  return (
+    <AuthProvider>
+      <RootLayoutNav />
+    </AuthProvider>
   );
 }
