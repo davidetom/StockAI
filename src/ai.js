@@ -34,3 +34,31 @@ export const parseInventoryIntent = async (userMessage, currentProducts) => {
     return { productId: null, productName: null, quantityChange: 0, replyText: 'Scusa, ho avuto un problema di connessione.' };
   }
 };
+
+// Aggiungi questa funzione sotto parseInventoryIntent
+
+export const transcribeAudio = async (base64Audio, mimeType) => {
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  
+  const prompt = `
+  Sei un assistente alla trascrizione per un'app di magazzino HORECA.
+  Ascolta questo audio e trascrivi ESATTAMENTE quello che dice l'utente in italiano.
+  Non aggiungere punteggiatura inventata, non rispondere alla domanda, limitati SOLO a scrivere il testo di ciò che è stato detto.
+  `;
+
+  try {
+    const result = await model.generateContent([
+      prompt,
+      {
+        inlineData: {
+          data: base64Audio,
+          mimeType: mimeType // es. 'audio/m4a' o 'audio/mp4'
+        }
+      }
+    ]);
+    return result.response.text().trim();
+  } catch (error) {
+    console.error('Errore Trascrizione Audio:', error);
+    return null;
+  }
+};

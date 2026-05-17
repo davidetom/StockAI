@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { View, TextInput, TouchableOpacity, FlatList, Text, StyleSheet, KeyboardAvoidingView, Platform, SafeAreaView, ActivityIndicator, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { parseInventoryIntent } from '../../ai';
+import { Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system/legacy';
+import { parseInventoryIntent, transcribeAudio } from '../../ai'; // <-- Aggiunto transcribeAudio
 import { getProducts, updateProductStock } from '../../db';
 import { useFocusEffect } from '@react-navigation/native';
 
@@ -11,15 +13,16 @@ export default function ChatScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [products, setProducts] = useState<any[]>([]);
   
-  // Stati per l'Azione in Sospeso e la Correzione
+  // Stati per la registrazione vocale
+  const [recording, setRecording] = useState<Audio.Recording | undefined>();
+  const [isTranscribing, setIsTranscribing] = useState(false);
+
   const [pendingAction, setPendingAction] = useState<any>(null);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [editData, setEditData] = useState({ productId: '', productName: '', quantityChange: 0 });
 
   useFocusEffect(
-    React.useCallback(() => {
-      loadProducts();
-    }, [])
+    React.useCallback(() => { loadProducts(); }, [])
   );
 
   const loadProducts = async () => {
@@ -27,61 +30,105 @@ export default function ChatScreen() {
     setProducts(data);
   };
 
-  const sendMessage = async () => {
-    if (!inputText.trim()) return;
-
-    const userMsg = { id: Date.now().toString(), text: inputText, sender: 'user' };
+  // --- LOGICA CENTRALE: Processa l'intento (Testo o Audio trascritto) ---
+  const processUserIntent = async (text: string, isAudioMsg: boolean = false) => {
+    const userMsg = { id: Date.now().toString(), text: text, sender: 'user', isAudio: isAudioMsg };
     setMessages(prev => [...prev, userMsg]);
     setInputText('');
     setIsLoading(true);
 
     const currentProducts = await getProducts();
-    const aiResponse = await parseInventoryIntent(userMsg.text, currentProducts);
+    const aiResponse = await parseInventoryIntent(text, currentProducts);
     
     if (aiResponse.productId) {
-      // Invece di aggiornare il DB, salviamo l'azione in sospeso
+      // 1. Cerchiamo il prodotto corrispondente per prendere la sua unità di misura
+      const matchedProduct = currentProducts.find((p : any) => p.id === aiResponse.productId);
+      const productUnit = matchedProduct ? matchedProduct.unit : 'pz.'; 
+
       setPendingAction({
         id: (Date.now() + 1).toString(),
         text: aiResponse.replyText,
         productId: aiResponse.productId,
         productName: aiResponse.productName,
-        quantityChange: aiResponse.quantityChange
+        quantityChange: aiResponse.quantityChange,
+        unit: productUnit // <-- 2. Aggiungiamo l'unità di misura allo stato!
       });
     } else {
-      // Se l'AI non ha capito, mostriamo solo il messaggio di testo
       setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), text: aiResponse.replyText, sender: 'ai' }]);
     }
     
     setIsLoading(false);
   };
 
-  // Funzione per confermare definitivamente l'operazione
+  const handleSendText = () => {
+    if (!inputText.trim()) return;
+    processUserIntent(inputText, false);
+  };
+
+  // --- LOGICA AUDIO ---
+  const startRecording = async () => {
+    try {
+      await Audio.requestPermissionsAsync();
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      setRecording(recording);
+    } catch (err) {
+      console.error('Failed to start recording', err);
+    }
+  };
+
+  const stopRecording = async () => {
+    if (!recording) return;
+    
+    // 1. Diamo SÙBITO il feedback visivo all'utente (mostriamo la rotellina)
+    setIsTranscribing(true); 
+    setRecording(undefined);
+
+    // 2. TRUCCO: Aspettiamo mezzo secondo (500ms) prima di staccare il microfono
+    // Questo permette di registrare la coda dell'ultima parola pronunciata
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // 3. Ora fermiamo fisicamente la registrazione
+    await recording.stopAndUnloadAsync();
+    await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+    const uri = recording.getURI();
+
+    if (uri) {
+      try {
+        const base64Audio = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+        const mimeType = Platform.OS === 'ios' ? 'audio/m4a' : 'audio/mp4';
+        
+        const transcribedText = await transcribeAudio(base64Audio, mimeType);
+
+        if (transcribedText) {
+          await processUserIntent(transcribedText, true);
+        } else {
+          setMessages(prev => [...prev, { id: Date.now().toString(), text: "Scusa, non ho compreso bene l'audio. Puoi ripetere?", sender: 'ai' }]);
+        }
+      } catch (e) {
+        console.error("Errore durante l'invio dell'audio:", e);
+      }
+    }
+    setIsTranscribing(false);
+  };
+
+  // ... (Tieni qui le tue funzioni handleConfirm, openEditModal, saveCorrections inalterate)
   const handleConfirm = async () => {
     if (!pendingAction) return;
-    
     await updateProductStock(pendingAction.productId, pendingAction.quantityChange);
-    
-    // Aggiungiamo un messaggio di successo alla chat
-    setMessages(prev => [...prev, { 
-      id: Date.now().toString(), 
-      text: `✅ Aggiornato: ${pendingAction.quantityChange > 0 ? '+' : ''}${pendingAction.quantityChange} ${pendingAction.productName}`, 
-      sender: 'ai' 
-    }]);
-    
+    setMessages(prev => [...prev, { id: Date.now().toString(), text: `✅ Aggiornato: ${pendingAction.quantityChange > 0 ? '+' : ''}${pendingAction.quantityChange} ${pendingAction.productName}`, sender: 'ai' }]);
     setPendingAction(null);
   };
 
-  // Funzione per aprire il modale di correzione
   const openEditModal = () => {
-    setEditData({
-      productId: pendingAction.productId,
-      productName: pendingAction.productName,
-      quantityChange: pendingAction.quantityChange
-    });
+    setEditData({ productId: pendingAction.productId, productName: pendingAction.productName, quantityChange: pendingAction.quantityChange });
     setIsEditModalVisible(true);
   };
 
-  // Funzione per salvare le correzioni fatte nel modale
   const saveCorrections = () => {
     setPendingAction({ ...pendingAction, ...editData });
     setIsEditModalVisible(false);
@@ -89,6 +136,8 @@ export default function ChatScreen() {
 
   const renderMessage = ({ item }: { item: any }) => (
     <View style={[styles.bubble, item.sender === 'user' ? styles.userBubble : styles.aiBubble]}>
+      {/* Se è un audio, mostriamo un'icona prima del testo */}
+      {item.isAudio && <Ionicons name="mic-outline" size={16} color="#FFF" style={{marginBottom: 4}} />}
       <Text style={item.sender === 'user' ? styles.userText : styles.aiText}>{item.text}</Text>
     </View>
   );
@@ -107,7 +156,7 @@ export default function ChatScreen() {
           contentContainerStyle={styles.chatContainer}
         />
 
-        {/* CARTA DI CONFERMA (Mostrata solo se c'è un'azione in sospeso) */}
+        {/* ... (CARTA DI CONFERMA: inalterata) ... */}
         {pendingAction && (
           <View style={styles.confirmationCard}>
             <Text style={styles.confirmText}>{pendingAction.text}</Text>
@@ -115,7 +164,7 @@ export default function ChatScreen() {
               <Ionicons name="cube-outline" size={18} color="#0B132B" style={{marginRight: 6}} />
               <Text style={styles.confirmHighlightText}>{pendingAction.productName}</Text>
               <Text style={[styles.confirmHighlightQty, { color: pendingAction.quantityChange > 0 ? '#1E8E3E' : '#D93025'}]}>
-                {pendingAction.quantityChange > 0 ? '+' : ''}{pendingAction.quantityChange} u.
+                {pendingAction.quantityChange > 0 ? '+' : ''}{pendingAction.quantityChange} {pendingAction.unit}
               </Text>
             </View>
             <Text style={styles.confirmQuestion}>Confermi l'operazione?</Text>
@@ -133,7 +182,7 @@ export default function ChatScreen() {
           </View>
         )}
 
-        {/* INPUT CHAT (Nascosto se c'è un'azione da confermare) */}
+        {/* INPUT CHAT DINAMICO */}
         {!pendingAction && (
           <View style={styles.inputContainer}>
             <TextInput
@@ -142,10 +191,27 @@ export default function ChatScreen() {
               placeholderTextColor="#999"
               value={inputText}
               onChangeText={setInputText}
+              editable={!recording && !isTranscribing} // Blocca scrittura se registra
             />
-            <TouchableOpacity style={[styles.sendButton, isLoading && styles.sendButtonDisabled]} onPress={sendMessage} disabled={isLoading}>
-              {isLoading ? <ActivityIndicator color="#FFF" size="small" /> : <Text style={styles.sendButtonText}>Invia</Text>}
-            </TouchableOpacity>
+            
+            {/* Logica per mostrare Invia o Microfono */}
+            {inputText.trim().length > 0 ? (
+              <TouchableOpacity style={[styles.sendButton, isLoading && styles.sendButtonDisabled]} onPress={handleSendText} disabled={isLoading}>
+                {isLoading ? <ActivityIndicator color="#FFF" size="small" /> : <Ionicons name="send" size={18} color="#FFF" />}
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity 
+                style={[styles.sendButton, recording ? styles.recordingBtn : null]} 
+                onPress={recording ? stopRecording : startRecording}
+                disabled={isTranscribing}
+              >
+                {isTranscribing ? (
+                  <ActivityIndicator color="#FFF" size="small" />
+                ) : (
+                  <Ionicons name={recording ? "stop" : "mic"} size={22} color="#FFF" />
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -189,7 +255,6 @@ export default function ChatScreen() {
           </View>
         </View>
       </Modal>
-
     </SafeAreaView>
   );
 }
@@ -212,6 +277,7 @@ const styles = StyleSheet.create({
   sendButton: { backgroundColor: '#0B132B', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
   sendButtonDisabled: { backgroundColor: '#6C757D' },
   sendButtonText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 },
+  recordingBtn: { backgroundColor: '#D93025' },
 
   /* Stili per la Scheda di Conferma (Dal Template) */
   confirmationCard: { backgroundColor: '#FFFFFF', margin: 16, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#EAEAEA', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 4 },
