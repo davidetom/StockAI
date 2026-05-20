@@ -159,3 +159,46 @@ export const logoutUser = async () => {
     console.error('Errore durante il logout', e);
   }
 };
+
+// --- LOGICA GESTIONE MAGAZZINO (ADMIN) ---
+
+export const addProduct = async (productData) => {
+  try {
+    const products = await getProducts();
+    // Creiamo un ID univoco e impostiamo lo stock iniziale a 0
+    const newProduct = { 
+      ...productData, 
+      id: `PROD-${Date.now()}`, 
+      current_stock: 0 
+    };
+    products.push(newProduct);
+    await AsyncStorage.setItem(DB_KEY, JSON.stringify(products));
+    return products;
+  } catch (e) {
+    console.error('Errore aggiunta prodotto', e);
+  }
+};
+
+export const deleteProduct = async (productId) => {
+  try {
+    const products = await getProducts();
+    const updatedProducts = products.filter(p => p.id !== productId);
+    await AsyncStorage.setItem(DB_KEY, JSON.stringify(updatedProducts));
+    return updatedProducts;
+  } catch (e) {
+    console.error('Errore eliminazione prodotto', e);
+  }
+};
+
+export const updateProductSupplier = async (productId, newSupplier) => {
+  try {
+    const products = await getProducts();
+    const updatedProducts = products.map(p => 
+      p.id === productId ? { ...p, supplier_id: newSupplier } : p
+    );
+    await AsyncStorage.setItem(DB_KEY, JSON.stringify(updatedProducts));
+    return updatedProducts;
+  } catch (e) {
+    console.error('Errore aggiornamento fornitore', e);
+  }
+};
