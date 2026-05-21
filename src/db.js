@@ -226,19 +226,24 @@ export const saveCustomApiKey = async (key) => {
   }
 };
 
-// --- LOGICA CATEGORIE IA ---
-export const applyProductCategories = async (categoryMapping) => {
+// --- LOGICA CATEGORIE E ICONE IA ---
+export const applyProductCategories = async (aiMapping) => {
   try {
     const products = await getProducts();
     const updatedProducts = products.map(p => {
-      if (categoryMapping[p.id]) {
-        return { ...p, category: categoryMapping[p.id] };
+      // Se Gemini ha restituito dati per questo prodotto
+      if (aiMapping[p.id]) {
+        return { 
+          ...p, 
+          category: aiMapping[p.id].category || p.category,
+          icon: aiMapping[p.id].icon || p.icon // Salva il nome dell'icona, se presente
+        };
       }
-      return p; // Se non ha categoria, rimane com'è o undefined
+      return p;
     });
     await AsyncStorage.setItem(DB_KEY, JSON.stringify(updatedProducts));
     return updatedProducts;
   } catch (e) {
-    console.error('Errore applicazione categorie', e);
+    console.error('Errore applicazione categorie e icone', e);
   }
 };

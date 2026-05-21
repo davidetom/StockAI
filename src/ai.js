@@ -46,8 +46,8 @@ export const parseInventoryIntent = async (userMessage, currentProducts) => {
   }
 };
 
-// 2. GENERAZIONE DINAMICA DELLE CATEGORIE
-export const categorizeInventory = async (currentProducts) => {
+// 2. GENERAZIONE DINAMICA CATEGORIE E ICONE
+export const categorizeInventory = async (currentProducts, availableIcons = []) => {
   if (!currentProducts || currentProducts.length === 0) return {};
   try {
     const genAI = await getGenAIInstance();
@@ -57,11 +57,17 @@ export const categorizeInventory = async (currentProducts) => {
     Sei un esperto di logistica HORECA. Analizza i seguenti prodotti: 
     ${JSON.stringify(currentProducts.map(p => ({id: p.id, name: p.name})))}
     
-    Raggruppali in un massimo di 5-6 macro-categorie logiche (es. "Alcolici", "Soft Drinks", "Ortofrutta", "Dispensa", ecc.).
-    Rispondi ESCLUSIVAMENTE con un JSON che mappa l'ID di ogni prodotto alla sua categoria, così:
+    Hai a disposizione le seguenti icone (per l'interfaccia grafica): 
+    ${JSON.stringify(availableIcons)}
+
+    Il tuo compito è duplice per ogni prodotto:
+    1. Raggrupparlo in una macro-categoria logica (es. "Alcolici", "Ortofrutta", "Dispensa").
+    2. Scegliere il nome dell'icona più appropriata ESCLUSIVAMENTE dalla lista fornita. Se nessuna icona è pertinente, restituisci null per l'icona.
+
+    Rispondi ESCLUSIVAMENTE con un JSON valido strutturato in questo modo, dove la chiave è l'ID del prodotto:
     {
-      "id_prodotto_1": "Nome Categoria",
-      "id_prodotto_2": "Nome Categoria"
+      "id_prodotto_1": { "category": "Nome Categoria", "icon": "nome_icona_scelta" },
+      "id_prodotto_2": { "category": "Nome Categoria", "icon": null }
     }
     NON INCLUDERE TESTO FUORI DAL JSON.
     `;
@@ -71,7 +77,7 @@ export const categorizeInventory = async (currentProducts) => {
     const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '');
     return JSON.parse(cleanJson);
   } catch (error) {
-    console.error('Errore AI Categorie:', error);
+    console.warn('I server IA sono occupati, riprovo più tardi.', error.message);
     return null;
   }
 };

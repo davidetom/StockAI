@@ -1,10 +1,35 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Image, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../../auth';
 import { categorizeInventory } from '../../ai';
 import { addProduct, applyProductCategories, deleteProduct, getProducts, updateProductSupplier } from '../../db';
+
+// Definizione manuale della mappa icone (aggiungi qui i nomi dei tuoi 21 file)
+const ICON_MAP: Record<string, any> = {
+  'baby-care': require('../../../assets/icons/baby-care.png'),
+  'bakery-shop': require('../../../assets/icons/bakery-shop.png'),
+  'bread': require('../../../assets/icons/bread.png'),
+  'canned-food': require('../../../assets/icons/canned-food.png'),
+  'catering': require('../../../assets/icons/catering.png'),
+  'cigarette': require('../../../assets/icons/cigarette.png'),
+  'cleaning-products': require('../../../assets/icons/cleaning-products.png'),
+  'coffee': require('../../../assets/icons/coffee.png'),
+  'dairy-products': require('../../../assets/icons/dairy-products.png'),
+  'fast-food': require('../../../assets/icons/fast-food.png'),
+  'groceries': require('../../../assets/icons/groceries.png'),
+  'liquor': require('../../../assets/icons/liquor.png'),
+  'meat': require('../../../assets/icons/meat.png'),
+  'medicine': require('../../../assets/icons/medicine.png'),
+  'pantry': require('../../../assets/icons/pantry.png'),
+  'personal-care': require('../../../assets/icons/personal-care.png'),
+  'pet-food': require('../../../assets/icons/pet-food.png'),
+  'seafood': require('../../../assets/icons/seafood.png'),
+  'soft-drink': require('../../../assets/icons/soft-drink.png'),
+  'sweet': require('../../../assets/icons/sweet.png'),
+  'takeaway': require('../../../assets/icons/takeaway.png'),
+};
 
 export default function WarehouseScreen() {
   const { user, logout } = useAuth();
@@ -45,10 +70,20 @@ export default function WarehouseScreen() {
   const triggerAICategorization = async () => {
     setIsUpdatingCategories(true);
     const currentData = await getProducts();
-    const mapping = await categorizeInventory(currentData);
+    const availableIconNames = Object.keys(ICON_MAP); 
+    
+    const mapping = await categorizeInventory(currentData, availableIconNames);
+    
     if (mapping) {
       await applyProductCategories(mapping);
+    } else {
+      // Se l'IA restituisce null (server down), avvisiamo l'utente!
+      Alert.alert(
+        "IA temporaneamente non disponibile", 
+        "I server di elaborazione sono molto carichi in questo momento. Il prodotto è stato salvato, ma la categorizzazione automatica avverrà in seguito."
+      );
     }
+    
     await loadData();
     setIsUpdatingCategories(false);
   };
@@ -139,7 +174,17 @@ export default function WarehouseScreen() {
 
     return (
       <View style={styles.card}>
-        <View style={styles.imagePlaceholder}><Ionicons name="image-outline" size={24} color="#B0B0B0" /></View>
+
+        {/* INIZIO MODIFICA ICONA */}
+        <View style={styles.imagePlaceholder}>
+          {item.icon && ICON_MAP[item.icon] ? (
+             <Image source={ICON_MAP[item.icon]} style={{ width: 32, height: 32 }} resizeMode="contain" />
+          ) : (
+             <Ionicons name="image-outline" size={24} color="#B0B0B0" />
+          )}
+        </View>
+        {/* FINE MODIFICA ICONA */}
+
         <View style={styles.infoContainer}>
           <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
           <Text style={styles.supplierText} numberOfLines={1}>{item.supplier_id} {item.category ? ` • ${item.category}` : ''}</Text>
