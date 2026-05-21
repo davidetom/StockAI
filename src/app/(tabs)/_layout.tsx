@@ -1,6 +1,6 @@
-import React, { useEffect } from 'react';
-import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Tabs } from 'expo-router';
+import React, { useEffect } from 'react';
 import { initDB } from '../../db';
 
 export default function TabLayout() {
@@ -16,15 +16,12 @@ export default function TabLayout() {
           backgroundColor: '#FFFFFF',
           borderTopWidth: 1,
           borderTopColor: '#F0F0F0',
-          height: 85, // Altezza comoda per includere il testo
-          paddingBottom: 25, // Spazio per la "home bar" di iPhone
-          paddingTop: 10,
-          elevation: 0, // Rimuove l'ombra su Android
-          shadowOpacity: 0, // Rimuove l'ombra su iOS
+          elevation: 0,
+          shadowOpacity: 0,
         },
-        tabBarActiveTintColor: '#0052FF', // Blu acceso del template
-        tabBarInactiveTintColor: '#8E8E93', // Grigio spento
-        headerShown: false, // Nascondiamo l'header di default perché usiamo i nostri
+        tabBarActiveTintColor: '#0052FF',
+        tabBarInactiveTintColor: '#8E8E93',
+        headerShown: false,
       }}>
       
       {/* Schermata 1: Chat */}
@@ -51,6 +48,15 @@ export default function TabLayout() {
         options={{
           title: 'Ordini',
           tabBarIcon: ({ color }) => <Ionicons name="receipt-outline" size={24} color={color} />,
+        }}
+      />
+
+      {/* Schermata 4: Impostazioni */}
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Impostazioni',
+          tabBarIcon: ({ color }) => <Ionicons name="settings-outline" size={24} color={color} />,
         }}
       />
     </Tabs>

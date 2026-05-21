@@ -202,3 +202,26 @@ export const updateProductSupplier = async (productId, newSupplier) => {
     console.error('Errore aggiornamento fornitore', e);
   }
 };
+
+// --- LOGICA CHIAVE API GEMINI ---
+const API_KEY_STORAGE = '@stockai_custom_api_key';
+
+export const getCustomApiKey = async () => {
+  try {
+    return await AsyncStorage.getItem(API_KEY_STORAGE);
+  } catch (e) {
+    return null;
+  }
+};
+
+export const saveCustomApiKey = async (key) => {
+  try {
+    if (key && key.trim() !== '') {
+      await AsyncStorage.setItem(API_KEY_STORAGE, key.trim());
+    } else {
+      await AsyncStorage.removeItem(API_KEY_STORAGE);
+    }
+  } catch (e) {
+    console.error('Errore nel salvataggio dell\'API Key', e);
+  }
+};
