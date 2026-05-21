@@ -165,7 +165,7 @@ export const logoutUser = async () => {
 export const addProduct = async (productData) => {
   try {
     const products = await getProducts();
-    // Creiamo un ID univoco e impostiamo lo stock iniziale a 0
+    // Il productData ora includerà { ...dati_base, category: '...', icon: '...' }
     const newProduct = { 
       ...productData, 
       id: `PROD-${Date.now()}`, 

@@ -3,10 +3,10 @@ import { useFocusEffect } from '@react-navigation/native';
 import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../../auth';
-import { categorizeInventory } from '../../ai';
-import { addProduct, applyProductCategories, deleteProduct, getProducts, updateProductSupplier } from '../../db';
+import { categorizeSingleProduct } from '../../ai';
+import { addProduct, deleteProduct, getProducts, updateProductSupplier } from '../../db';
 
-// Definizione manuale della mappa icone (aggiungi qui i nomi dei tuoi 21 file)
+// Definizione manuale della mappa icone
 const ICON_MAP: Record<string, any> = {
   'baby-care': require('../../../assets/icons/baby-care.png'),
   'bakery-shop': require('../../../assets/icons/bakery-shop.png'),
@@ -66,28 +66,6 @@ export default function WarehouseScreen() {
     setProducts(data);
   };
 
-  // --- TRIGGER IA: AGGIORNA CATEGORIE ---
-  const triggerAICategorization = async () => {
-    setIsUpdatingCategories(true);
-    const currentData = await getProducts();
-    const availableIconNames = Object.keys(ICON_MAP); 
-    
-    const mapping = await categorizeInventory(currentData, availableIconNames);
-    
-    if (mapping) {
-      await applyProductCategories(mapping);
-    } else {
-      // Se l'IA restituisce null (server down), avvisiamo l'utente!
-      Alert.alert(
-        "IA temporaneamente non disponibile", 
-        "I server di elaborazione sono molto carichi in questo momento. Il prodotto è stato salvato, ma la categorizzazione automatica avverrà in seguito."
-      );
-    }
-    
-    await loadData();
-    setIsUpdatingCategories(false);
-  };
-
   // --- DATI DERIVATI ---
   const uniqueSuppliers = useMemo(() => {
     const obj: Record<string, number> = {};
@@ -132,7 +110,7 @@ export default function WarehouseScreen() {
         { text: "Annulla", style: "cancel" },
         { text: "Conferma", style: "destructive", onPress: async () => {
             await deleteProduct(item.id);
-            await triggerAICategorization(); // RI-CATEGORIZZA CON IA
+            await loadData(); // Ricarica i dati per aggiornare liste e categorie
           }
         }
       ]);
@@ -143,16 +121,37 @@ export default function WarehouseScreen() {
       Alert.alert("Errore", "Compila tutti i campi obbligatori.");
       return;
     }
+
+    setIsUpdatingCategories(true);
+    const availableIconNames = Object.keys(ICON_MAP);
+    
+    // Chiamata IA Incrementale (Passiamo solo il nome, le categorie esistenti e le icone)
+    const aiClassification = await categorizeSingleProduct(
+      newProd.name, 
+      uniqueCategories,
+      availableIconNames
+    );
+
+    // Salvataggio nel database con le informazioni dedotte dall'IA
     await addProduct({
       name: newProd.name,
       min_threshold: parseInt(newProd.min),
       max_threshold: parseInt(newProd.max),
       unit: newProd.unit,
-      supplier_id: newProd.supplier
+      supplier_id: newProd.supplier,
+      category: aiClassification?.category || undefined,
+      icon: aiClassification?.icon || undefined
     });
+
+    if (!aiClassification) {
+      Alert.alert("Attenzione", "L'IA è sovraccarica. Il prodotto è stato salvato, ma dovrai assegnare l'icona e la categoria manualmente in seguito.");
+    }
+
     setIsAddModalVisible(false);
     setNewProd({ name: '', min: '', max: '', unit: 'pz.', supplier: '', isNewSupplier: false, commChannel: 'WhatsApp' });
-    await triggerAICategorization(); // RI-CATEGORIZZA CON IA
+    
+    await loadData(); 
+    setIsUpdatingCategories(false);
   };
 
   const handleUpdateSupplier = async () => {
@@ -270,29 +269,22 @@ export default function WarehouseScreen() {
 
           {/* BARRA CATEGORIE IA DINAMICHE */}
           <View style={styles.categoriesWrapper}>
-            {isUpdatingCategories ? (
-              <View style={{flexDirection: 'row', alignItems: 'center', padding: 12}}>
-                <ActivityIndicator size="small" color="#0052FF" />
-                <Text style={{marginLeft: 8, color: '#666', fontSize: 13}}>L'IA sta organizzando il magazzino...</Text>
-              </View>
-            ) : (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesScroll}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesScroll}>
+              <TouchableOpacity 
+                style={[styles.categoryChip, !selectedCategoryFilter && styles.categoryChipActive]} 
+                onPress={() => setSelectedCategoryFilter(null)}>
+                <Text style={{color: !selectedCategoryFilter ? '#FFF' : '#333'}}>Tutti</Text>
+              </TouchableOpacity>
+              
+              {uniqueCategories.map(cat => (
                 <TouchableOpacity 
-                  style={[styles.categoryChip, !selectedCategoryFilter && styles.categoryChipActive]} 
-                  onPress={() => setSelectedCategoryFilter(null)}>
-                  <Text style={{color: !selectedCategoryFilter ? '#FFF' : '#333'}}>Tutti</Text>
+                  key={cat} 
+                  style={[styles.categoryChip, selectedCategoryFilter === cat && styles.categoryChipActive]} 
+                  onPress={() => setSelectedCategoryFilter(cat)}>
+                  <Text style={{color: selectedCategoryFilter === cat ? '#FFF' : '#333'}}>{cat}</Text>
                 </TouchableOpacity>
-                
-                {uniqueCategories.map(cat => (
-                  <TouchableOpacity 
-                    key={cat} 
-                    style={[styles.categoryChip, selectedCategoryFilter === cat && styles.categoryChipActive]} 
-                    onPress={() => setSelectedCategoryFilter(cat)}>
-                    <Text style={{color: selectedCategoryFilter === cat ? '#FFF' : '#333'}}>{cat}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            )}
+              ))}
+            </ScrollView>
           </View>
         </>
       )}
@@ -369,8 +361,12 @@ export default function WarehouseScreen() {
               </ScrollView>
             )}
 
-            <TouchableOpacity style={styles.btnPrimaryFull} onPress={handleSaveNewProduct}>
-              <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 16}}>Salva e Categorizza (AI)</Text>
+            <TouchableOpacity style={styles.btnPrimaryFull} onPress={handleSaveNewProduct} disabled={isUpdatingCategories}>
+              {isUpdatingCategories ? (
+                 <ActivityIndicator size="small" color="#FFF" />
+              ) : (
+                 <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 16}}>Salva e Analizza (AI)</Text>
+              )}
             </TouchableOpacity>
           </ScrollView>
         </SafeAreaView>

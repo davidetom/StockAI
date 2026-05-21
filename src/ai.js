@@ -46,28 +46,30 @@ export const parseInventoryIntent = async (userMessage, currentProducts) => {
   }
 };
 
-// 2. GENERAZIONE DINAMICA CATEGORIE E ICONE
-export const categorizeInventory = async (currentProducts, availableIcons = []) => {
-  if (!currentProducts || currentProducts.length === 0) return {};
+// 2. GENERAZIONE CATEGORIA E ICONA INCREMENTALE (Per singolo prodotto)
+export const categorizeSingleProduct = async (productName, existingCategories = [], availableIcons = []) => {
+  if (!productName) return null;
+  
   try {
     const genAI = await getGenAIInstance();
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const prompt = `
-    Sei un esperto di logistica HORECA. Analizza i seguenti prodotti: 
-    ${JSON.stringify(currentProducts.map(p => ({id: p.id, name: p.name})))}
+    Sei un esperto di logistica HORECA. Devi classificare un singolo nuovo prodotto da aggiungere al magazzino.
     
-    Hai a disposizione le seguenti icone (per l'interfaccia grafica): 
-    ${JSON.stringify(availableIcons)}
+    Prodotto da classificare: "${productName}"
+    
+    Hai a disposizione queste categorie GIA' ESISTENTI nel magazzino: ${JSON.stringify(existingCategories)}
+    Hai a disposizione queste icone (per l'interfaccia grafica): ${JSON.stringify(availableIcons)}
 
-    Il tuo compito è duplice per ogni prodotto:
-    1. Raggrupparlo in una macro-categoria logica (es. "Alcolici", "Ortofrutta", "Dispensa").
-    2. Scegliere il nome dell'icona più appropriata ESCLUSIVAMENTE dalla lista fornita. Se nessuna icona è pertinente, restituisci null per l'icona.
+    Il tuo compito:
+    1. CATEGORIA: Seleziona la categoria più adatta tra quelle ESISTENTI. Se (e SOLO SE) nessuna di quelle esistenti è appropriata, crea un nome per una NUOVA macro-categoria (breve, max 2 parole, es. "Alcolici", "Ortofrutta", "Dispensa").
+    2. ICONA: Scegli il nome dell'icona più appropriata ESCLUSIVAMENTE dalla lista fornita. Se nessuna icona è pertinente, restituisci null.
 
-    Rispondi ESCLUSIVAMENTE con un JSON valido strutturato in questo modo, dove la chiave è l'ID del prodotto:
+    Rispondi ESCLUSIVAMENTE con un JSON valido strutturato in questo modo:
     {
-      "id_prodotto_1": { "category": "Nome Categoria", "icon": "nome_icona_scelta" },
-      "id_prodotto_2": { "category": "Nome Categoria", "icon": null }
+      "category": "Nome Categoria Scelta o Nuova",
+      "icon": "nome_icona_scelta_o_null"
     }
     NON INCLUDERE TESTO FUORI DAL JSON.
     `;
