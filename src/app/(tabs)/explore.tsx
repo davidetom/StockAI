@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useMemo, useState } from 'react';
-import { Alert, FlatList, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../../auth';
-import { addProduct, deleteProduct, getProducts, updateProductSupplier } from '../../db';
+import { categorizeInventory } from '../../ai';
+import { addProduct, applyProductCategories, deleteProduct, getProducts, updateProductSupplier } from '../../db';
 
 export default function WarehouseScreen() {
   const { user, logout } = useAuth();
@@ -11,21 +12,25 @@ export default function WarehouseScreen() {
 
   const [products, setProducts] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isUpdatingCategories, setIsUpdatingCategories] = useState(false);
   
   // Stati UI
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'products' | 'suppliers'>('products');
   const [isEditMode, setIsEditMode] = useState(false);
+  
+  // Filtri
   const [selectedSupplierFilter, setSelectedSupplierFilter] = useState<string | null>(null);
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(null);
 
   // Stati Modali
   const [isAddModalVisible, setIsAddModalVisible] = useState(false);
   const [isSupplierModalVisible, setIsSupplierModalVisible] = useState(false);
   const [activeProductId, setActiveProductId] = useState<string | null>(null);
 
-  // Stato Form Nuovo Prodotto
+  // Stato Form
   const [newProd, setNewProd] = useState({ name: '', min: '', max: '', unit: 'pz.', supplier: '', isNewSupplier: false, commChannel: 'WhatsApp' });
-  const [newSupplierName, setNewSupplierName] = useState(''); // Per il cambio fornitore rapido
+  const [newSupplierName, setNewSupplierName] = useState('');
 
   useFocusEffect(
     React.useCallback(() => { loadData(); }, [])
@@ -36,22 +41,38 @@ export default function WarehouseScreen() {
     setProducts(data);
   };
 
-  // --- LOGICA DATI E FILTRI ---
+  // --- TRIGGER IA: AGGIORNA CATEGORIE ---
+  const triggerAICategorization = async () => {
+    setIsUpdatingCategories(true);
+    const currentData = await getProducts();
+    const mapping = await categorizeInventory(currentData);
+    if (mapping) {
+      await applyProductCategories(mapping);
+    }
+    await loadData();
+    setIsUpdatingCategories(false);
+  };
+
+  // --- DATI DERIVATI ---
   const uniqueSuppliers = useMemo(() => {
-    const suppliersObj: Record<string, number> = {};
-    products.forEach(p => {
-      suppliersObj[p.supplier_id] = (suppliersObj[p.supplier_id] || 0) + 1;
-    });
-    return Object.keys(suppliersObj).map(key => ({ name: key, count: suppliersObj[key] }));
+    const obj: Record<string, number> = {};
+    products.forEach(p => { obj[p.supplier_id] = (obj[p.supplier_id] || 0) + 1; });
+    return Object.keys(obj).map(key => ({ name: key, count: obj[key] }));
+  }, [products]);
+
+  const uniqueCategories = useMemo(() => {
+    const cats = new Set(products.map(p => p.category).filter(c => c));
+    return Array.from(cats) as string[];
   }, [products]);
 
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
       const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.supplier_id.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesSupplier = selectedSupplierFilter ? p.supplier_id === selectedSupplierFilter : true;
-      return matchesSearch && matchesSupplier;
+      const matchesCategory = selectedCategoryFilter ? p.category === selectedCategoryFilter : true;
+      return matchesSearch && matchesSupplier && matchesCategory;
     });
-  }, [products, searchQuery, selectedSupplierFilter]);
+  }, [products, searchQuery, selectedSupplierFilter, selectedCategoryFilter]);
 
   // --- AZIONI MANAGER ---
   const handleMenuAction = (action: 'edit' | 'suppliers' | 'products') => {
@@ -72,18 +93,14 @@ export default function WarehouseScreen() {
   };
 
   const confirmDelete = (item: any) => {
-    Alert.alert(
-      "Elimina Prodotto",
-      `Vuoi davvero eliminare ${item.name} dal magazzino?`,
-      [
+    Alert.alert("Elimina Prodotto", `Vuoi davvero eliminare ${item.name} dal magazzino?`, [
         { text: "Annulla", style: "cancel" },
         { text: "Conferma", style: "destructive", onPress: async () => {
             await deleteProduct(item.id);
-            loadData();
+            await triggerAICategorization(); // RI-CATEGORIZZA CON IA
           }
         }
-      ]
-    );
+      ]);
   };
 
   const handleSaveNewProduct = async () => {
@@ -99,8 +116,8 @@ export default function WarehouseScreen() {
       supplier_id: newProd.supplier
     });
     setIsAddModalVisible(false);
-    loadData();
     setNewProd({ name: '', min: '', max: '', unit: 'pz.', supplier: '', isNewSupplier: false, commChannel: 'WhatsApp' });
+    await triggerAICategorization(); // RI-CATEGORIZZA CON IA
   };
 
   const handleUpdateSupplier = async () => {
@@ -125,10 +142,9 @@ export default function WarehouseScreen() {
         <View style={styles.imagePlaceholder}><Ionicons name="image-outline" size={24} color="#B0B0B0" /></View>
         <View style={styles.infoContainer}>
           <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
-          <Text style={styles.supplierText} numberOfLines={1}>{item.supplier_id}</Text>
+          <Text style={styles.supplierText} numberOfLines={1}>{item.supplier_id} {item.category ? ` • ${item.category}` : ''}</Text>
         </View>
 
-        {/* LOGICA MODIFICA VS VISUALIZZAZIONE */}
         {isEditMode ? (
           <View style={styles.editActions}>
             <TouchableOpacity style={styles.actionBtnTruck} onPress={() => { setActiveProductId(item.id); setNewSupplierName(item.supplier_id); setIsSupplierModalVisible(true); }}>
@@ -170,9 +186,7 @@ export default function WarehouseScreen() {
           <TouchableOpacity onPress={() => isManager && setIsMenuOpen(!isMenuOpen)} disabled={!isManager}>
             <Ionicons name="menu-outline" size={28} color={isManager ? "#000" : "#CCC"} />
           </TouchableOpacity>
-          
           <Text style={styles.headerTitle}>{viewMode === 'suppliers' ? 'Fornitori' : 'Magazzino'}</Text>
-          
           <View style={styles.headerIcons}>
             <TouchableOpacity onPress={logout}><Ionicons name="log-out-outline" size={26} color="#D93025" /></TouchableOpacity>
           </View>
@@ -196,22 +210,46 @@ export default function WarehouseScreen() {
         )}
       </View>
 
-      {/* BARRA DI RICERCA */}
+      {/* BARRA DI RICERCA E CATEGORIE */}
       {viewMode === 'products' && (
-        <View style={styles.searchContainer}>
-          <Ionicons name="search-outline" size={20} color="#999" style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Cerca prodotto o fornitore..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          {selectedSupplierFilter && (
-            <TouchableOpacity onPress={() => setSelectedSupplierFilter(null)} style={styles.clearFilterBadge}>
-              <Text style={styles.clearFilterText}>X Filtro Fornitore</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+        <>
+          <View style={styles.searchContainer}>
+            <Ionicons name="search-outline" size={20} color="#999" style={styles.searchIcon} />
+            <TextInput style={styles.searchInput} placeholder="Cerca prodotto o fornitore..." value={searchQuery} onChangeText={setSearchQuery} />
+            {selectedSupplierFilter && (
+              <TouchableOpacity onPress={() => setSelectedSupplierFilter(null)} style={styles.clearFilterBadge}>
+                <Text style={styles.clearFilterText}>X Filtro Fornitore</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* BARRA CATEGORIE IA DINAMICHE */}
+          <View style={styles.categoriesWrapper}>
+            {isUpdatingCategories ? (
+              <View style={{flexDirection: 'row', alignItems: 'center', padding: 12}}>
+                <ActivityIndicator size="small" color="#0052FF" />
+                <Text style={{marginLeft: 8, color: '#666', fontSize: 13}}>L'IA sta organizzando il magazzino...</Text>
+              </View>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesScroll}>
+                <TouchableOpacity 
+                  style={[styles.categoryChip, !selectedCategoryFilter && styles.categoryChipActive]} 
+                  onPress={() => setSelectedCategoryFilter(null)}>
+                  <Text style={{color: !selectedCategoryFilter ? '#FFF' : '#333'}}>Tutti</Text>
+                </TouchableOpacity>
+                
+                {uniqueCategories.map(cat => (
+                  <TouchableOpacity 
+                    key={cat} 
+                    style={[styles.categoryChip, selectedCategoryFilter === cat && styles.categoryChipActive]} 
+                    onPress={() => setSelectedCategoryFilter(cat)}>
+                    <Text style={{color: selectedCategoryFilter === cat ? '#FFF' : '#333'}}>{cat}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        </>
       )}
 
       {/* TASTO AGGIUNGI PRODOTTO */}
@@ -287,7 +325,7 @@ export default function WarehouseScreen() {
             )}
 
             <TouchableOpacity style={styles.btnPrimaryFull} onPress={handleSaveNewProduct}>
-              <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 16}}>Salva Prodotto</Text>
+              <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 16}}>Salva e Categorizza (AI)</Text>
             </TouchableOpacity>
           </ScrollView>
         </SafeAreaView>
@@ -345,11 +383,16 @@ const styles = StyleSheet.create({
   dropdownItem: { flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
   dropdownText: { fontSize: 15, color: '#333', fontWeight: '500' },
 
-  searchContainer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#F8F9FA' },
-  searchIcon: { position: 'absolute', left: 28, zIndex: 1 },
-  searchInput: { flex: 1, backgroundColor: '#FFF', paddingVertical: 10, paddingLeft: 40, paddingRight: 16, borderRadius: 8, borderWidth: 1, borderColor: '#EAEAEA' },
+  searchContainer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, backgroundColor: '#FFF' },
+  searchIcon: { position: 'absolute', left: 28, zIndex: 1, top: 22 },
+  searchInput: { flex: 1, backgroundColor: '#F8F9FA', paddingVertical: 10, paddingLeft: 40, paddingRight: 16, borderRadius: 8, borderWidth: 1, borderColor: '#EAEAEA' },
   clearFilterBadge: { backgroundColor: '#0052FF', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, marginLeft: 8 },
   clearFilterText: { color: '#FFF', fontSize: 12, fontWeight: 'bold' },
+
+  categoriesWrapper: { backgroundColor: '#FFF', borderBottomWidth: 1, borderColor: '#F0F0F0' },
+  categoriesScroll: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
+  categoryChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F8F9FA', borderWidth: 1, borderColor: '#EAEAEA', marginRight: 8 },
+  categoryChipActive: { backgroundColor: '#0B132B', borderColor: '#0B132B' },
 
   addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', margin: 16, padding: 16, backgroundColor: '#F0F4FF', borderRadius: 8, borderStyle: 'dashed', borderWidth: 1, borderColor: '#0052FF' },
   addBtnText: { color: '#0052FF', fontWeight: 'bold', fontSize: 16 },
@@ -376,14 +419,14 @@ const styles = StyleSheet.create({
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderColor: '#F0F0F0' },
   modalBody: { padding: 16 },
   label: { fontSize: 14, fontWeight: '600', color: '#333', marginTop: 16, marginBottom: 8 },
-  input: { backgroundColor: '#F8F9FA', borderWidth: 1, borderColor: '#EAEAEA', borderRadius: 8, padding: 14, fontSize: 15 },
+  input: { backgroundColor: '#F8F9FA', borderWidth: 1, borderColor: '#EAEAEA', borderRadius: 8, padding: 14, fontSize: 15, marginBottom: 12 },
   
   supplierChip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, backgroundColor: '#F8F9FA', borderWidth: 1, borderColor: '#EAEAEA', marginRight: 8 },
   supplierChipActive: { backgroundColor: '#E8F0FE', borderColor: '#0052FF' },
   channelChip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, backgroundColor: '#F8F9FA', borderWidth: 1, borderColor: '#EAEAEA' },
   channelChipActive: { backgroundColor: '#0B132B', borderColor: '#0B132B' },
 
-  btnPrimaryFull: { backgroundColor: '#0052FF', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 32 },
+  btnPrimaryFull: { backgroundColor: '#0052FF', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 12 },
   btnOutline: { padding: 16, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: '#CCC' },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },

@@ -225,3 +225,20 @@ export const saveCustomApiKey = async (key) => {
     console.error('Errore nel salvataggio dell\'API Key', e);
   }
 };
+
+// --- LOGICA CATEGORIE IA ---
+export const applyProductCategories = async (categoryMapping) => {
+  try {
+    const products = await getProducts();
+    const updatedProducts = products.map(p => {
+      if (categoryMapping[p.id]) {
+        return { ...p, category: categoryMapping[p.id] };
+      }
+      return p; // Se non ha categoria, rimane com'è o undefined
+    });
+    await AsyncStorage.setItem(DB_KEY, JSON.stringify(updatedProducts));
+    return updatedProducts;
+  } catch (e) {
+    console.error('Errore applicazione categorie', e);
+  }
+};
