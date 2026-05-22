@@ -1,12 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Image, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../../auth';
-import { categorizeSingleProduct } from '../../ai';
-import { addProduct, deleteProduct, getProducts, updateProductSupplier } from '../../db';
+import { categorizeSingleProduct, generateInventoryTemplate } from '../../ai';
+import { addMultipleProducts, addProduct, deleteProduct, getProducts, updateProductDetails, updateProductSupplier } from '../../db';
 
-// Definizione manuale della mappa icone
 const ICON_MAP: Record<string, any> = {
   'baby-care': require('../../../assets/icons/baby-care.png'),
   'bakery-shop': require('../../../assets/icons/bakery-shop.png'),
@@ -38,24 +37,27 @@ export default function WarehouseScreen() {
   const [products, setProducts] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isUpdatingCategories, setIsUpdatingCategories] = useState(false);
+  const [isGeneratingTemplate, setIsGeneratingTemplate] = useState(false);
+  const [customIndustry, setCustomIndustry] = useState('');
   
-  // Stati UI
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'products' | 'suppliers'>('products');
   const [isEditMode, setIsEditMode] = useState(false);
   
-  // Filtri
   const [selectedSupplierFilter, setSelectedSupplierFilter] = useState<string | null>(null);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(null);
 
   // Stati Modali
   const [isAddModalVisible, setIsAddModalVisible] = useState(false);
   const [isSupplierModalVisible, setIsSupplierModalVisible] = useState(false);
+  const [isEditProductModalVisible, setIsEditProductModalVisible] = useState(false);
+  
   const [activeProductId, setActiveProductId] = useState<string | null>(null);
-
-  // Stato Form
-  const [newProd, setNewProd] = useState({ name: '', min: '', max: '', unit: 'pz.', supplier: '', isNewSupplier: false, commChannel: 'WhatsApp' });
   const [newSupplierName, setNewSupplierName] = useState('');
+
+  // Form Stati
+  const [newProd, setNewProd] = useState({ name: '', min: '', max: '', unit: 'pz.', supplier: '', isNewSupplier: false, commChannel: 'WhatsApp' });
+  const [editProdData, setEditProdData] = useState({ id: '', name: '', min: '', max: '', unit: '' });
 
   useFocusEffect(
     React.useCallback(() => { loadData(); }, [])
@@ -66,7 +68,31 @@ export default function WarehouseScreen() {
     setProducts(data);
   };
 
-  // --- DATI DERIVATI ---
+  const handleGenerateTemplate = async (industryType: string) => {
+    Keyboard.dismiss(); // <--- CHIUDE LA TASTIERA IMMEDIATAMENTE
+    
+    if (!industryType.trim()) {
+      Alert.alert("Errore", "Inserisci una descrizione valida per il tuo locale.");
+      return;
+    }
+    
+    setIsGeneratingTemplate(true);
+    const availableIconNames = Object.keys(ICON_MAP);
+    
+    const aiProducts = await generateInventoryTemplate(industryType, availableIconNames);
+    
+    if (aiProducts && aiProducts.length > 0) {
+      await addMultipleProducts(aiProducts);
+      setCustomIndustry('');
+      await loadData();
+      Alert.alert("Magia Completata! ✨", `L'IA ha generato e configurato ${aiProducts.length} prodotti per il tuo "${industryType}".`);
+    } else {
+      Alert.alert("Errore", "I server sono momentaneamente sovraccarichi. Riprova tra pochi secondi.");
+    }
+    
+    setIsGeneratingTemplate(false);
+  };
+
   const uniqueSuppliers = useMemo(() => {
     const obj: Record<string, number> = {};
     products.forEach(p => { obj[p.supplier_id] = (obj[p.supplier_id] || 0) + 1; });
@@ -87,7 +113,6 @@ export default function WarehouseScreen() {
     });
   }, [products, searchQuery, selectedSupplierFilter, selectedCategoryFilter]);
 
-  // --- AZIONI MANAGER ---
   const handleMenuAction = (action: 'edit' | 'suppliers' | 'products') => {
     setIsMenuOpen(false);
     if (action === 'edit') {
@@ -106,17 +131,18 @@ export default function WarehouseScreen() {
   };
 
   const confirmDelete = (item: any) => {
-    Alert.alert("Elimina Prodotto", `Vuoi davvero eliminare ${item.name} dal magazzino?`, [
+    Alert.alert("Elimina", `Vuoi davvero eliminare ${item.name}?`, [
         { text: "Annulla", style: "cancel" },
         { text: "Conferma", style: "destructive", onPress: async () => {
             await deleteProduct(item.id);
-            await loadData(); // Ricarica i dati per aggiornare liste e categorie
+            await loadData();
           }
         }
       ]);
   };
 
   const handleSaveNewProduct = async () => {
+    Keyboard.dismiss(); // Aggiunto anche qui per sicurezza
     if (!newProd.name || !newProd.min || !newProd.max || !newProd.supplier) {
       Alert.alert("Errore", "Compila tutti i campi obbligatori.");
       return;
@@ -125,14 +151,8 @@ export default function WarehouseScreen() {
     setIsUpdatingCategories(true);
     const availableIconNames = Object.keys(ICON_MAP);
     
-    // Chiamata IA Incrementale (Passiamo solo il nome, le categorie esistenti e le icone)
-    const aiClassification = await categorizeSingleProduct(
-      newProd.name, 
-      uniqueCategories,
-      availableIconNames
-    );
+    const aiClassification = await categorizeSingleProduct(newProd.name, uniqueCategories, availableIconNames);
 
-    // Salvataggio nel database con le informazioni dedotte dall'IA
     await addProduct({
       name: newProd.name,
       min_threshold: parseInt(newProd.min),
@@ -143,28 +163,50 @@ export default function WarehouseScreen() {
       icon: aiClassification?.icon || undefined
     });
 
-    if (!aiClassification) {
-      Alert.alert("Attenzione", "L'IA è sovraccarica. Il prodotto è stato salvato, ma dovrai assegnare l'icona e la categoria manualmente in seguito.");
-    }
+    if (!aiClassification) Alert.alert("Attenzione", "L'IA è sovraccarica. Prodotto salvato senza icona automatica.");
 
     setIsAddModalVisible(false);
     setNewProd({ name: '', min: '', max: '', unit: 'pz.', supplier: '', isNewSupplier: false, commChannel: 'WhatsApp' });
-    
     await loadData(); 
     setIsUpdatingCategories(false);
   };
 
   const handleUpdateSupplier = async () => {
+    Keyboard.dismiss();
     if (activeProductId && newSupplierName) {
       await updateProductSupplier(activeProductId, newSupplierName);
       setIsSupplierModalVisible(false);
       loadData();
-    } else {
-      Alert.alert("Errore", "Inserisci o seleziona un nome per il fornitore.");
     }
   };
 
-  // --- RENDER COMPONENTI ---
+  const openEditProduct = (item: any) => {
+    setEditProdData({
+      id: item.id,
+      name: item.name,
+      min: String(item.min_threshold),
+      max: String(item.max_threshold),
+      unit: item.unit
+    });
+    setIsEditProductModalVisible(true);
+  };
+
+  const handleSaveProductEdit = async () => {
+    Keyboard.dismiss();
+    if (!editProdData.name || !editProdData.min || !editProdData.max || !editProdData.unit) {
+      Alert.alert("Errore", "Compila tutti i campi.");
+      return;
+    }
+    await updateProductDetails(editProdData.id, {
+      name: editProdData.name,
+      min_threshold: parseInt(editProdData.min),
+      max_threshold: parseInt(editProdData.max),
+      unit: editProdData.unit
+    });
+    setIsEditProductModalVisible(false);
+    loadData();
+  };
+
   const renderProductItem = ({ item }: { item: any }) => {
     let statusConfig = { bg: '#E6F4EA', text: '#1E8E3E', label: 'Sicuro', icon: 'shield-checkmark-outline' };
     if (item.current_stock === 0) statusConfig = { bg: '#F1F3F4', text: '#5F6368', label: 'Non disp.', icon: 'ban-outline' };
@@ -173,8 +215,6 @@ export default function WarehouseScreen() {
 
     return (
       <View style={styles.card}>
-
-        {/* INIZIO MODIFICA ICONA */}
         <View style={styles.imagePlaceholder}>
           {item.icon && ICON_MAP[item.icon] ? (
              <Image source={ICON_MAP[item.icon]} style={{ width: 32, height: 32 }} resizeMode="contain" />
@@ -182,7 +222,6 @@ export default function WarehouseScreen() {
              <Ionicons name="image-outline" size={24} color="#B0B0B0" />
           )}
         </View>
-        {/* FINE MODIFICA ICONA */}
 
         <View style={styles.infoContainer}>
           <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
@@ -191,6 +230,9 @@ export default function WarehouseScreen() {
 
         {isEditMode ? (
           <View style={styles.editActions}>
+            <TouchableOpacity style={styles.actionBtnEdit} onPress={() => openEditProduct(item)}>
+              <Ionicons name="pencil-outline" size={20} color="#333" />
+            </TouchableOpacity>
             <TouchableOpacity style={styles.actionBtnTruck} onPress={() => { setActiveProductId(item.id); setNewSupplierName(item.supplier_id); setIsSupplierModalVisible(true); }}>
               <Ionicons name="bus-outline" size={20} color="#0052FF" />
             </TouchableOpacity>
@@ -224,7 +266,6 @@ export default function WarehouseScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* HEADER & MENU */}
       <View style={{ zIndex: 10 }}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => isManager && setIsMenuOpen(!isMenuOpen)} disabled={!isManager}>
@@ -254,57 +295,113 @@ export default function WarehouseScreen() {
         )}
       </View>
 
-      {/* BARRA DI RICERCA E CATEGORIE */}
-      {viewMode === 'products' && (
-        <>
-          <View style={styles.searchContainer}>
-            <Ionicons name="search-outline" size={20} color="#999" style={styles.searchIcon} />
-            <TextInput style={styles.searchInput} placeholder="Cerca prodotto o fornitore..." value={searchQuery} onChangeText={setSearchQuery} />
-            {selectedSupplierFilter && (
-              <TouchableOpacity onPress={() => setSelectedSupplierFilter(null)} style={styles.clearFilterBadge}>
-                <Text style={styles.clearFilterText}>X Filtro Fornitore</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+      {isGeneratingTemplate && (
+        <View style={styles.fullScreenLoader}>
+           <ActivityIndicator size="large" color="#FFF" />
+           <Text style={{color: '#FFF', marginTop: 12, fontWeight: 'bold', fontSize: 16}}>L'IA sta costruendo il magazzino...</Text>
+        </View>
+      )}
 
-          {/* BARRA CATEGORIE IA DINAMICHE */}
-          <View style={styles.categoriesWrapper}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesScroll}>
-              <TouchableOpacity 
-                style={[styles.categoryChip, !selectedCategoryFilter && styles.categoryChipActive]} 
-                onPress={() => setSelectedCategoryFilter(null)}>
-                <Text style={{color: !selectedCategoryFilter ? '#FFF' : '#333'}}>Tutti</Text>
-              </TouchableOpacity>
-              
-              {uniqueCategories.map(cat => (
-                <TouchableOpacity 
-                  key={cat} 
-                  style={[styles.categoryChip, selectedCategoryFilter === cat && styles.categoryChipActive]} 
-                  onPress={() => setSelectedCategoryFilter(cat)}>
-                  <Text style={{color: selectedCategoryFilter === cat ? '#FFF' : '#333'}}>{cat}</Text>
+      {/* ONBOARDING VUOTO CON KEYBOARD AVOIDING */}
+      {products.length === 0 && viewMode === 'products' ? (
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+          <ScrollView contentContainerStyle={styles.emptyStateContainer} keyboardShouldPersistTaps="handled">
+            <View style={styles.emptyIconBg}>
+              <Ionicons name={isManager ? "sparkles" : "cube-outline"} size={48} color="#0052FF" />
+            </View>
+            <Text style={styles.emptyTitle}>Il tuo Magazzino è vuoto!</Text>
+            
+            {isManager ? (
+              <>
+                <Text style={styles.emptySubtitle}>
+                  Inizializza il magazzino con l'IA. Inserisci una descrizione del tuo locale:
+                </Text>
+                
+                <View style={styles.customInputContainer}>
+                  <TextInput
+                    style={styles.customInput}
+                    placeholder="Es. Hamburgheria, Pub Irlandese..."
+                    placeholderTextColor="#999"
+                    value={customIndustry}
+                    onChangeText={setCustomIndustry}
+                  />
+                  <TouchableOpacity style={styles.btnCustomGenerate} onPress={() => handleGenerateTemplate(customIndustry)}>
+                     <Ionicons name="flash-outline" size={18} color="#FFF" style={{marginRight: 6}} />
+                     <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 15}}>Genera Catalogo</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={[styles.label, { marginTop: 32, marginBottom: 16, color: '#888' }]}>Oppure usa un template rapido:</Text>
+                
+                <View style={styles.templateGrid}>
+                  {['Pizzeria', 'Cocktail Bar', 'Ristorante Pesce', 'Caffetteria'].map(type => (
+                    <TouchableOpacity key={type} style={styles.templateCard} onPress={() => handleGenerateTemplate(type)}>
+                       <Text style={styles.templateCardText}>{type}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                
+                <TouchableOpacity style={{marginTop: 32}} onPress={() => setIsAddModalVisible(true)}>
+                   <Text style={{color: '#666', fontWeight: 'bold', fontSize: 15, textDecorationLine: 'underline'}}>No grazie, aggiungo manualmente</Text>
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
+              </>
+            ) : (
+              <Text style={[styles.emptySubtitle, { fontWeight: '500', color: '#1C2541', marginTop: 8 }]}>
+                Chiedi al gestore di riempirlo o inizializzarlo per iniziare ad utilizzare StockAI.
+              </Text>
+            )}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      ) : (
+        <>
+          {viewMode === 'products' && (
+            <>
+              <View style={styles.searchContainer}>
+                <Ionicons name="search-outline" size={20} color="#999" style={styles.searchIcon} />
+                <TextInput style={styles.searchInput} placeholder="Cerca prodotto..." value={searchQuery} onChangeText={setSearchQuery} />
+                {selectedSupplierFilter && (
+                  <TouchableOpacity onPress={() => setSelectedSupplierFilter(null)} style={styles.clearFilterBadge}>
+                    <Text style={styles.clearFilterText}>X Filtro Fornitore</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              <View style={styles.categoriesWrapper}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesScroll}>
+                  <TouchableOpacity 
+                    style={[styles.categoryChip, !selectedCategoryFilter && styles.categoryChipActive]} 
+                    onPress={() => setSelectedCategoryFilter(null)}>
+                    <Text style={{color: !selectedCategoryFilter ? '#FFF' : '#333'}}>Tutti</Text>
+                  </TouchableOpacity>
+                  {uniqueCategories.map(cat => (
+                    <TouchableOpacity 
+                      key={cat} 
+                      style={[styles.categoryChip, selectedCategoryFilter === cat && styles.categoryChipActive]} 
+                      onPress={() => setSelectedCategoryFilter(cat)}>
+                      <Text style={{color: selectedCategoryFilter === cat ? '#FFF' : '#333'}}>{cat}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </>
+          )}
+
+          {isEditMode && (
+            <TouchableOpacity style={styles.addBtn} onPress={() => setIsAddModalVisible(true)}>
+              <Ionicons name="add-circle-outline" size={24} color="#0052FF" style={{marginRight: 8}} />
+              <Text style={styles.addBtnText}>Aggiungi Nuovo Prodotto</Text>
+            </TouchableOpacity>
+          )}
+
+          <FlatList
+            data={viewMode === 'products' ? filteredProducts : uniqueSuppliers}
+            keyExtractor={(item, index) => item.id || index.toString()}
+            renderItem={viewMode === 'products' ? renderProductItem : renderSupplierItem}
+            contentContainerStyle={styles.listContainer}
+            ItemSeparatorComponent={() => <View style={styles.separator} />}
+          />
         </>
       )}
-
-      {/* TASTO AGGIUNGI PRODOTTO */}
-      {isEditMode && (
-        <TouchableOpacity style={styles.addBtn} onPress={() => setIsAddModalVisible(true)}>
-          <Ionicons name="add-circle-outline" size={24} color="#0052FF" style={{marginRight: 8}} />
-          <Text style={styles.addBtnText}>Aggiungi Nuovo Prodotto</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* LISTA PRINCIPALE */}
-      <FlatList
-        data={viewMode === 'products' ? filteredProducts : uniqueSuppliers}
-        keyExtractor={(item, index) => item.id || index.toString()}
-        renderItem={viewMode === 'products' ? renderProductItem : renderSupplierItem}
-        contentContainerStyle={styles.listContainer}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-      />
 
       {/* MODALE: AGGIUNGI PRODOTTO */}
       <Modal visible={isAddModalVisible} animationType="slide" presentationStyle="pageSheet">
@@ -342,14 +439,6 @@ export default function WarehouseScreen() {
             {newProd.isNewSupplier ? (
               <>
                 <TextInput style={styles.input} placeholder="Nome Nuovo Fornitore" value={newProd.supplier} onChangeText={(t) => setNewProd({...newProd, supplier: t})} />
-                <Text style={styles.label}>Canale Preferito</Text>
-                <View style={{flexDirection: 'row', gap: 8, marginBottom: 16}}>
-                  {['WhatsApp', 'Email', 'Telefono'].map(ch => (
-                    <TouchableOpacity key={ch} style={[styles.channelChip, newProd.commChannel === ch && styles.channelChipActive]} onPress={() => setNewProd({...newProd, commChannel: ch})}>
-                      <Text style={{color: newProd.commChannel === ch ? '#FFF' : '#333'}}>{ch}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
               </>
             ) : (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 16}}>
@@ -362,11 +451,40 @@ export default function WarehouseScreen() {
             )}
 
             <TouchableOpacity style={styles.btnPrimaryFull} onPress={handleSaveNewProduct} disabled={isUpdatingCategories}>
-              {isUpdatingCategories ? (
-                 <ActivityIndicator size="small" color="#FFF" />
-              ) : (
-                 <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 16}}>Salva e Analizza (AI)</Text>
-              )}
+              {isUpdatingCategories ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 16}}>Salva e Analizza (AI)</Text>}
+            </TouchableOpacity>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* MODALE: MODIFICA DETTAGLI PRODOTTO */}
+      <Modal visible={isEditProductModalVisible} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setIsEditProductModalVisible(false)}><Ionicons name="close" size={28} color="#000" /></TouchableOpacity>
+            <Text style={styles.headerTitle}>Modifica Dettagli</Text>
+            <View style={{width: 28}}/>
+          </View>
+          <ScrollView contentContainerStyle={styles.modalBody}>
+            <Text style={styles.label}>Nome Prodotto</Text>
+            <TextInput style={styles.input} value={editProdData.name} onChangeText={(t) => setEditProdData({...editProdData, name: t})} />
+
+            <View style={{flexDirection: 'row', gap: 12}}>
+              <View style={{flex: 1}}>
+                <Text style={styles.label}>Soglia Minima</Text>
+                <TextInput style={styles.input} keyboardType="numeric" value={editProdData.min} onChangeText={(t) => setEditProdData({...editProdData, min: t})} />
+              </View>
+              <View style={{flex: 1}}>
+                <Text style={styles.label}>Soglia Massima</Text>
+                <TextInput style={styles.input} keyboardType="numeric" value={editProdData.max} onChangeText={(t) => setEditProdData({...editProdData, max: t})} />
+              </View>
+            </View>
+
+            <Text style={styles.label}>Unità di Misura</Text>
+            <TextInput style={styles.input} value={editProdData.unit} onChangeText={(t) => setEditProdData({...editProdData, unit: t})} />
+
+            <TouchableOpacity style={styles.btnPrimaryFull} onPress={handleSaveProductEdit}>
+              <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 16}}>Salva Modifiche</Text>
             </TouchableOpacity>
           </ScrollView>
         </SafeAreaView>
@@ -391,20 +509,11 @@ export default function WarehouseScreen() {
             </ScrollView>
 
             <Text style={[styles.label, { alignSelf: 'flex-start' }]}>Oppure scrivi un nome:</Text>
-            <TextInput 
-              style={[styles.input, {width: '100%'}]} 
-              value={newSupplierName} 
-              onChangeText={setNewSupplierName} 
-              placeholder="Nome fornitore" 
-            />
+            <TextInput style={[styles.input, {width: '100%'}]} value={newSupplierName} onChangeText={setNewSupplierName} placeholder="Nome fornitore" />
 
             <View style={{flexDirection: 'row', gap: 12, marginTop: 16}}>
-              <TouchableOpacity style={[styles.btnOutline, {flex: 1}]} onPress={() => setIsSupplierModalVisible(false)}>
-                <Text>Annulla</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.btnPrimaryFull, {flex: 1, marginTop: 0}]} onPress={handleUpdateSupplier}>
-                <Text style={{color:'#FFF'}}>Salva</Text>
-              </TouchableOpacity>
+              <TouchableOpacity style={[styles.btnOutline, {flex: 1}]} onPress={() => setIsSupplierModalVisible(false)}><Text>Annulla</Text></TouchableOpacity>
+              <TouchableOpacity style={[styles.btnPrimaryFull, {flex: 1, marginTop: 0}]} onPress={handleUpdateSupplier}><Text style={{color:'#FFF'}}>Salva</Text></TouchableOpacity>
             </View>
           </View>
         </View>
@@ -420,6 +529,20 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#000' },
   headerIcons: { flexDirection: 'row', alignItems: 'center' },
   
+  fullScreenLoader: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
+
+  emptyStateContainer: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: '#F8F9FA' },
+  emptyIconBg: { backgroundColor: '#E8F0FE', padding: 24, borderRadius: 100, marginBottom: 24 },
+  emptyTitle: { fontSize: 24, fontWeight: 'bold', color: '#111', marginBottom: 12, textAlign: 'center' },
+  emptySubtitle: { fontSize: 15, color: '#666', textAlign: 'center', marginBottom: 24, lineHeight: 22, paddingHorizontal: 12 },
+  templateGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 12, width: '100%' },
+  templateCard: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#0052FF', paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, width: '46%', alignItems: 'center' },
+  templateCardText: { color: '#0052FF', fontWeight: 'bold', fontSize: 14, textAlign: 'center' },
+  
+  customInputContainer: { width: '100%', gap: 10 },
+  customInput: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#EAEAEA', borderRadius: 8, padding: 14, fontSize: 15, width: '100%', color: '#333' },
+  btnCustomGenerate: { flexDirection: 'row', backgroundColor: '#0052FF', padding: 14, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+
   dropdownMenu: { position: 'absolute', top: 60, left: 16, backgroundColor: '#FFF', borderRadius: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5, zIndex: 100, minWidth: 200 },
   dropdownItem: { flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
   dropdownText: { fontSize: 15, color: '#333', fontWeight: '500' },
@@ -453,6 +576,7 @@ const styles = StyleSheet.create({
   badgeQuantity: { fontSize: 14, fontWeight: '700' },
 
   editActions: { flexDirection: 'row', gap: 12 },
+  actionBtnEdit: { padding: 10, backgroundColor: '#F5F5F5', borderRadius: 8 },
   actionBtnTrash: { padding: 10, backgroundColor: '#FCE8E6', borderRadius: 8 },
   actionBtnTruck: { padding: 10, backgroundColor: '#E8F0FE', borderRadius: 8 },
 
@@ -464,8 +588,6 @@ const styles = StyleSheet.create({
   
   supplierChip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, backgroundColor: '#F8F9FA', borderWidth: 1, borderColor: '#EAEAEA', marginRight: 8 },
   supplierChipActive: { backgroundColor: '#E8F0FE', borderColor: '#0052FF' },
-  channelChip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, backgroundColor: '#F8F9FA', borderWidth: 1, borderColor: '#EAEAEA' },
-  channelChipActive: { backgroundColor: '#0B132B', borderColor: '#0B132B' },
 
   btnPrimaryFull: { backgroundColor: '#0052FF', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 12 },
   btnOutline: { padding: 16, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: '#CCC' },

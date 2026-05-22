@@ -145,3 +145,43 @@ export const scanDeliveryNote = async (base64Image, mimeType, currentProducts, s
     return null;
   }
 };
+
+// 5. GENERAZIONE TEMPLATE INIZIALE (ONBOARDING)
+export const generateInventoryTemplate = async (industryType, availableIcons = []) => {
+  try {
+    const genAI = await getGenAIInstance();
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+    const prompt = `
+    Sei un consulente logistico per il settore HORECA. Un utente ha appena aperto un locale di tipo "${industryType}".
+    Il suo magazzino è attualmente vuoto.
+    
+    Genera un inventario iniziale intelligente con i 15 prodotti più indispensabili per questa specifica attività.
+    
+    Icone disponibili (scegli SOLO da questa lista, o null): ${JSON.stringify(availableIcons)}
+
+    Rispondi ESCLUSIVAMENTE con un oggetto JSON valido in questo formato:
+    {
+      "products": [
+        {
+          "name": "Nome Prodotto (es. Farina 00)",
+          "unit": "kg",
+          "min_threshold": 5,
+          "max_threshold": 25,
+          "category": "Nome Categoria (es. Dispensa)",
+          "icon": "nome_icona_scelta"
+        }
+      ]
+    }
+    NON INCLUDERE ALTRO TESTO.
+    `;
+
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text().trim();
+    const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '');
+    return JSON.parse(cleanJson).products;
+  } catch (error) {
+    console.error('Errore Generazione Template:', error);
+    return null;
+  }
+};

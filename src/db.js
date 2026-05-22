@@ -190,6 +190,19 @@ export const deleteProduct = async (productId) => {
   }
 };
 
+export const updateProductDetails = async (productId, updatedData) => {
+  try {
+    const products = await getProducts();
+    const newProducts = products.map(p => 
+      p.id === productId ? { ...p, ...updatedData } : p
+    );
+    await AsyncStorage.setItem(DB_KEY, JSON.stringify(newProducts));
+    return newProducts;
+  } catch (e) {
+    console.error('Errore aggiornamento dettagli prodotto', e);
+  }
+};
+
 export const updateProductSupplier = async (productId, newSupplier) => {
   try {
     const products = await getProducts();
@@ -289,5 +302,26 @@ export const completeTransitOrderWithScan = async (orderId, scannedItems, suppli
     
   } catch(e) {
     console.error('Errore completamento ordine con scansione', e);
+  }
+};
+
+// --- LOGICA ONBOARDING ---
+export const addMultipleProducts = async (newProductsArray) => {
+  try {
+    const products = await getProducts();
+    
+    // Formattiamo i prodotti generati dall'IA per il nostro database
+    const formattedProducts = newProductsArray.map((p, index) => ({
+      ...p,
+      id: `PROD-${Date.now()}-${index}`,
+      supplier_id: 'Fornitore Generico', // Il gestore potrà poi assegnare il fornitore reale
+      current_stock: 0, // Iniziano a zero, pronti per il primo ordine!
+    }));
+    
+    const updatedProducts = [...products, ...formattedProducts];
+    await AsyncStorage.setItem(DB_KEY, JSON.stringify(updatedProducts));
+    return updatedProducts;
+  } catch (e) {
+    console.error('Errore salvataggio multiplo:', e);
   }
 };
