@@ -202,7 +202,7 @@ export const scanOnboardingReceipt = async (base64Image, mimeType, existingCateg
     Il tuo compito:
     1. Estrai il NOME DEL FORNITORE (chi ha emesso la fattura, di solito in alto a sinistra o al centro).
     2. Estrai tutti i prodotti (nome e quantità).
-    3. Per ogni prodotto, deduci l'unità di misura (unit), assegna una categoria logica (category) e scegli l'icona più appropriata ESCLUSIVAMENTE dalla lista fornita (icon).
+    3. Per ogni prodotto, deduci l'unità di misura (unit), assegna un valore default di 5 e 20 per i threshold, assegna una categoria logica (category) e scegli l'icona più appropriata ESCLUSIVAMENTE dalla lista fornita (icon).
 
     Rispondi ESCLUSIVAMENTE con un oggetto JSON valido in questo formato:
     {
@@ -210,8 +210,10 @@ export const scanOnboardingReceipt = async (base64Image, mimeType, existingCateg
       "items": [
         {
           "name": "Nome prodotto",
-          "quantity": 10,
-          "unit": "pz.",
+          "quantity": 0, // o il valore rilevato
+          "min_threshold": 5,
+          "max_threshold": 20,
+          "unit": "pz.", // o il valore rilevato
           "category": "Nome Categoria",
           "icon": "nome_icona"
         }
@@ -230,6 +232,55 @@ export const scanOnboardingReceipt = async (base64Image, mimeType, existingCateg
     return JSON.parse(cleanJson);
   } catch (error) {
     console.error('Errore Scansione Fattura Onboarding:', error);
+    return null;
+  }
+};
+
+// 7. ANALISI FILE MULTIMODALE (CSV/TXT/PDF) PER ONBOARDING
+export const analyzeInventoryFile = async (base64Data, mimeType, industryType, availableIcons = []) => {
+  try {
+    const genAI = await getGenAIInstance();
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+    const prompt = `
+    Sei un estrattore di dati precisissimo per un sistema logistico HORECA.
+    Analizza il documento allegato (PDF, CSV o TXT) che contiene un inventario di magazzino di un locale: "${industryType}".
+    Icone disponibili: ${JSON.stringify(availableIcons)}
+
+    REGOLE FONDAMENTALI (PENA IL FALLIMENTO):
+    1. ESTRAI SOLO ED ESCLUSIVAMENTE I PRODOTTI SCRITTI NEL DOCUMENTO. NON inventare NESSUN prodotto aggiuntivo.
+    2. Se il documento contiene quantità, unità di misura (kg, pz, litri), fornitore o soglie, RISPETTALE e usale ESATTAMENTE come sono scritte.
+    3. SE (e solo se) mancano dei dati per un prodotto estratto, compila i vuoti con questi default: current_stock = 0, unit = "pz.", min_threshold = 5, max_threshold = 20, supplier_id = "Fornitore Estratto Generico".
+    4. Assegna a ciascun prodotto una "category" logica (es. "Bevande", "Dispensa") e un'icona appropriata scegliendola SOLO dalla lista fornita.
+    
+    Rispondi SOLO con questo JSON:
+    {
+      "products": [
+        {
+          "name": "Nome estratto",
+          "unit": "Unità estratta o default",
+          "current_stock": 10,
+          "min_threshold": 5,
+          "max_threshold": 20,
+          "supplier_id": "Nome fornitore estratto o default",
+          "category": "Nome categoria",
+          "icon": "nome_icona"
+        }
+      ]
+    }
+    NON INCLUDERE ALTRO TESTO.
+    `;
+
+    // Passiamo il file come InlineData (come fatto per le foto)
+    const result = await model.generateContent([
+      prompt,
+      { inlineData: { data: base64Data, mimeType: mimeType } }
+    ]);
+    
+    const cleanJson = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+    return JSON.parse(cleanJson).products;
+  } catch (e) {
+    console.error('Errore analisi file:', e);
     return null;
   }
 };

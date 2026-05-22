@@ -1,10 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../../auth';
-import { categorizeSingleProduct, generateInventoryTemplate, scanOnboardingReceipt } from '../../ai';
+import { analyzeInventoryFile, categorizeSingleProduct, generateInventoryTemplate, scanOnboardingReceipt } from '../../ai';
 import { addMultipleProducts, addProduct, deleteProduct, getProducts, updateProductDetails, updateProductSupplier } from '../../db';
 
 const ICON_MAP: Record<string, any> = {
@@ -98,6 +100,8 @@ export default function WarehouseScreen() {
         const newItems = aiResult.items.map((item: any) => ({
           name: item.name,
           unit: item.unit,
+          min_threshold: item.min_threshold,
+          max_threshold: item.max_threshold,
           category: item.category,
           icon: item.icon,
           supplier_id: aiResult.supplierName || 'Fornitore Generico',
@@ -124,6 +128,12 @@ export default function WarehouseScreen() {
     setOnboardingScannedItems(updated);
   };
 
+  const updateScannedItemValue = (index: number, field: 'min_threshold' | 'max_threshold', newValue: string) => {
+    const updated = [...onboardingScannedItems];
+    updated[index][field] = parseInt(newValue.replace(/[^0-9]/g, '')) || 0;
+    setOnboardingScannedItems(updated);
+  };
+
   const confirmFaldoni = async () => {
     if (onboardingScannedItems.length === 0) {
       setIsOnboardingScanVisible(false);
@@ -137,6 +147,42 @@ export default function WarehouseScreen() {
     await loadData();
     setIsUpdatingCategories(false);
     Alert.alert("Faldoni Svuotati! 🚀", "I prodotti scansionati sono stati aggiunti con successo al tuo magazzino.");
+  };
+
+  // --- LOGICA CARICAMENTO FILE (PDF/CSV/TXT) ---
+  const handlePickFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ 
+        // Accettiamo PDF, CSV, TXT e formati Excel (sebbene per Excel sia sempre meglio consigliare il PDF)
+        type: ['application/pdf', 'text/csv', 'text/plain', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'],
+        copyToCacheDirectory: true 
+      });
+      
+      if (!result.canceled && result.assets[0]) {
+        setIsGeneratingTemplate(true); // Usiamo lo stesso overlay di caricamento
+        
+        const fileUri = result.assets[0].uri;
+        let mimeType = result.assets[0].mimeType || 'text/plain';
+        
+        // Leggiamo il file convertendolo in stringa Base64
+        const base64File = await FileSystem.readAsStringAsync(fileUri, { encoding: 'base64' });
+        
+        const availableIconNames = Object.keys(ICON_MAP);
+        const aiProducts = await analyzeInventoryFile(base64File, mimeType, customIndustry || "Generico", availableIconNames);
+        
+        if (aiProducts && aiProducts.length > 0) {
+          await addMultipleProducts(aiProducts);
+          await loadData();
+          Alert.alert("Importazione Riuscita! 📄", `L'IA ha letto il file e importato esattamente ${aiProducts.length} prodotti nel tuo magazzino.`);
+        } else {
+          Alert.alert("Errore di Lettura", "Non sono riuscito a estrarre prodotti dal file. Assicurati che sia un PDF, CSV o TXT leggibile.");
+        }
+        setIsGeneratingTemplate(false);
+      }
+    } catch (err) { 
+      console.error(err);
+      setIsGeneratingTemplate(false);
+    }
   };
 
   // --- LOGICA TEMPLATE STANDARD ---
@@ -207,6 +253,30 @@ export default function WarehouseScreen() {
           } 
         }
       ]);
+  };
+
+  // --- FUNZIONE TEMPORANEA DI TEST PER RESETTARE IL DB ---
+  const handleClearWarehouse = () => {
+    Alert.alert(
+      "⚠️ RESET COMPLETO (TEST)",
+      "Vuoi davvero eliminare TUTTI i prodotti presenti nel magazzino per ricominciare il test da zero?",
+      [
+        { text: "Annulla", style: "cancel" },
+        { 
+          text: "Svuota Tutto", 
+          style: "destructive", 
+          onPress: async () => {
+            setIsGeneratingTemplate(true); // Attiva la rotellina di caricamento
+            // Esegue un ciclo eliminando i prodotti uno alla volta
+            for (const p of products) {
+              await deleteProduct(p.id);
+            }
+            await loadData(); // Ricarica il magazzino (ora vuoto)
+            setIsGeneratingTemplate(false);
+          } 
+        }
+      ]
+    );
   };
 
   const handleSaveNewProduct = async () => {
@@ -289,8 +359,8 @@ export default function WarehouseScreen() {
           )}
         </View>
         <View style={styles.infoContainer}>
-          <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
-          <Text style={styles.supplierText} numberOfLines={1}>{item.supplier_id} {item.category ? ` • ${item.category}` : ''}</Text>
+          <Text style={styles.productName} numberOfLines={5}>{item.name}</Text>
+          <Text style={styles.supplierText} numberOfLines={5}>{item.supplier_id} {item.category ? ` • ${item.category}` : ''}</Text>
         </View>
         {isEditMode ? (
           <View style={styles.editActions}>
@@ -359,6 +429,15 @@ export default function WarehouseScreen() {
               <Ionicons name="cube-outline" size={20} color="#000" style={{marginRight: 8}} />
               <Text style={styles.dropdownText}>Tutti i Prodotti</Text>
             </TouchableOpacity>
+            {/* --- INIZIO OPZIONE TEMPORANEA DI TEST --- */}
+            <TouchableOpacity 
+              style={[styles.dropdownItem, { borderBottomWidth: 0, borderTopWidth: 1, borderColor: '#FCE8E6' }]} 
+              onPress={() => { setIsMenuOpen(false); handleClearWarehouse(); }}
+            >
+              <Ionicons name="trash-bin-outline" size={20} color="#D93025" style={{marginRight: 8}} />
+              <Text style={[styles.dropdownText, { color: '#D93025', fontWeight: 'bold' }]}>DANGER: Svuota Magazzino</Text>
+            </TouchableOpacity>
+            {/* --- FINE OPZIONE TEMPORANEA DI TEST --- */}
           </View>
         )}
       </View>
@@ -402,14 +481,21 @@ export default function WarehouseScreen() {
 
                 {/* DIVISORE (Aggiornato il testo) */}
                 <View style={styles.dividerContainer}>
-                  <View style={styles.dividerLine} /><Text style={styles.dividerText}>OPPURE FOTOGRAFA FATTURE</Text><View style={styles.dividerLine} />
+                  <View style={styles.dividerLine} /><Text style={styles.dividerText}>OPPURE</Text><View style={styles.dividerLine} />
                 </View>
                 
-                {/* 2. TASTO SCANNER (Ora in basso, rinominato) */}
-                <TouchableOpacity style={styles.btnFaldoni} onPress={() => setIsOnboardingScanVisible(true)}>
-                   <Ionicons name="camera-outline" size={20} color="#FFF" style={{marginRight: 8}} />
-                   <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 16}}>Scannerizza fatture</Text>
-                </TouchableOpacity>
+                {/* BOTTONI FOTO E FILE */}
+                <View style={{flexDirection: 'row', gap: 12, width: '100%'}}>
+                  <TouchableOpacity style={[styles.btnFaldoni, {flex: 1, paddingHorizontal: 12}]} onPress={() => setIsOnboardingScanVisible(true)}>
+                    <Ionicons name="camera-outline" size={20} color="#FFF" style={{marginRight: 6}} />
+                    <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 14}}>Fotografa fatture</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={[styles.btnFaldoni, {flex: 1, paddingHorizontal: 12, backgroundColor: '#0052FF'}]} onPress={handlePickFile}>
+                    <Ionicons name="document-attach-outline" size={20} color="#FFF" style={{marginRight: 6}} />
+                    <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 14}}>Carica (PDF/CSV)</Text>
+                  </TouchableOpacity>
+                </View>
                 
                 {/* TASTO MANUALE (Rimane in fondo) */}
                 <TouchableOpacity style={{marginTop: 32}} onPress={() => setIsAddModalVisible(true)}>
@@ -510,6 +596,27 @@ export default function WarehouseScreen() {
                       <TouchableOpacity onPress={() => removeScannedItem(idx)}>
                         <Ionicons name="trash-outline" size={20} color="#D93025" />
                       </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  <View style={{flexDirection: 'row', gap: 10, marginTop: 8}}>
+                    <View style={{flex: 1}}>
+                      <Text style={{fontSize: 10, color: '#666'}}>Min</Text>
+                      <TextInput 
+                        style={styles.smallInput} 
+                        keyboardType="numeric" 
+                        value={String(item.min_threshold)} 
+                        onChangeText={(t) => updateScannedItemValue(idx, 'min_threshold', t)} 
+                      />
+                    </View>
+                    <View style={{flex: 1}}>
+                      <Text style={{fontSize: 10, color: '#666'}}>Max</Text>
+                      <TextInput 
+                        style={styles.smallInput} 
+                        keyboardType="numeric" 
+                        value={String(item.max_threshold)} 
+                        onChangeText={(t) => updateScannedItemValue(idx, 'max_threshold', t)} 
+                      />
                     </View>
                   </View>
                 </View>
@@ -671,6 +778,9 @@ const styles = StyleSheet.create({
   customInputContainer: { width: '100%', gap: 10 },
   customInput: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#EAEAEA', borderRadius: 8, padding: 14, fontSize: 15, width: '100%', color: '#333' },
   btnCustomGenerate: { flexDirection: 'row', backgroundColor: '#0052FF', padding: 14, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  alternativeActions: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, width: '100%' },
+  btnAlt: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#0052FF', borderRadius: 8, paddingVertical: 14, paddingHorizontal: 12, backgroundColor: '#FFFFFF' },
+  btnAltText: { color: '#0052FF', fontWeight: '600', marginLeft: 8 },
 
   dropdownMenu: { position: 'absolute', top: 60, left: 16, backgroundColor: '#FFF', borderRadius: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5, zIndex: 100, minWidth: 200 },
   dropdownItem: { flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },

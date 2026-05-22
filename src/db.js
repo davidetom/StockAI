@@ -310,20 +310,20 @@ export const addMultipleProducts = async (newProductsArray) => {
   try {
     const products = await getProducts();
     
-    // Formattiamo i prodotti per il database, rispettando i dati se provengono da una fattura
     const formattedProducts = newProductsArray.map((p, index) => ({
       ...p,
       id: `PROD-${Date.now()}-${index}`,
-      supplier_id: p.supplier_id || 'Fornitore Generico', 
-      current_stock: p.current_stock !== undefined ? p.current_stock : 0, 
-      min_threshold: p.min_threshold || 5,
-      max_threshold: p.max_threshold || 20,
+      supplier_id: p.supplier_id || 'Fornitore Generico',
+      // Logica di fallback sicura
+      current_stock: Number(p.current_stock) || 0,
+      min_threshold: Number(p.min_threshold) || 5,
+      max_threshold: Number(p.max_threshold) || 20,
     }));
     
     const updatedProducts = [...products, ...formattedProducts];
     await AsyncStorage.setItem(DB_KEY, JSON.stringify(updatedProducts));
     return updatedProducts;
   } catch (e) {
-    console.error('Errore salvataggio multiplo:', e);
+    console.error('Errore salvataggio massivo:', e);
   }
 };
