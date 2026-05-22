@@ -1,10 +1,27 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '../../auth'; // path verso il tuo auth.tsx
+import React, { useState } from 'react';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useAuth } from '../../auth'; // aggiusta il path se necessario
 
 export default function LoginScreen() {
-  const { user, login, isLoading } = useAuth();
+  const { login, isLoading } = useAuth();
+  
+  // Stati per i campi di input
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  const handleLogin = async () => {
+    if (!email || !password) {
+      Alert.alert('Errore', 'Inserisci email e password per accedere.');
+      return;
+    }
+    
+    try {
+      await login(email, password);
+    } catch (error: any) {
+      Alert.alert('Errore di accesso', error.message || 'Credenziali non valide.');
+    }
+  };
 
   if (isLoading) {
     return (
@@ -16,7 +33,10 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
+        style={styles.content}
+      >
         
         {/* Logo e Titolo */}
         <View style={styles.logoContainer}>
@@ -27,22 +47,38 @@ export default function LoginScreen() {
           <Text style={styles.subtitle}>Gestione magazzino intelligente</Text>
         </View>
 
-        {/* Form / Bottoni MVP */}
+        {/* Form di Login Reale */}
         <View style={styles.formContainer}>
-          <TouchableOpacity style={styles.btnStaff} onPress={() => login('STAFF')}>
-            <Ionicons name="person-outline" size={20} color="#FFF" style={{marginRight: 8}} />
-            <Text style={styles.btnStaffText}>Accedi come Staff</Text>
-          </TouchableOpacity>
-
-          <View style={styles.dividerContainer}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>oppure</Text>
-            <View style={styles.dividerLine} />
+          <View style={styles.inputContainer}>
+            <Ionicons name="mail-outline" size={20} color="#666" style={styles.inputIcon} />
+            <TextInput 
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor="#999"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
           </View>
 
-          <TouchableOpacity style={styles.btnManager} onPress={() => login('MANAGER')}>
-            <Ionicons name="shield-checkmark-outline" size={20} color="#0B132B" style={{marginRight: 8}} />
-            <Text style={styles.btnManagerText}>Accedi come Gestore</Text>
+          <View style={styles.inputContainer}>
+            <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
+            <TextInput 
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor="#999"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+          </View>
+
+          <TouchableOpacity style={styles.btnManager} onPress={handleLogin}>
+            <Text style={styles.btnManagerText}>Accedi</Text>
+            <Ionicons name="arrow-forward-outline" size={20} color="#FFF" style={{marginLeft: 8}} />
           </TouchableOpacity>
         </View>
 
@@ -59,7 +95,7 @@ export default function LoginScreen() {
           </View>
         </View>
 
-      </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -72,14 +108,29 @@ const styles = StyleSheet.create({
   iconWrapper: { backgroundColor: '#1C2541', padding: 16, borderRadius: 16, marginBottom: 16 },
   title: { fontSize: 28, fontWeight: 'bold', color: '#000', marginBottom: 8 },
   subtitle: { fontSize: 14, color: '#666' },
+  
   formContainer: { marginBottom: 32 },
-  btnStaff: { flexDirection: 'row', backgroundColor: '#1C2541', paddingVertical: 16, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
-  btnStaffText: { color: '#FFF', fontSize: 15, fontWeight: '600' },
-  dividerContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 24 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: '#E0E0E0' },
-  dividerText: { marginHorizontal: 12, color: '#888', fontSize: 12 },
-  btnManager: { flexDirection: 'row', backgroundColor: '#FFF', paddingVertical: 16, borderRadius: 8, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#1C2541' },
-  btnManagerText: { color: '#1C2541', fontSize: 15, fontWeight: '600' },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    borderWidth: 1,
+    borderColor: '#EAEAEA',
+    borderRadius: 8,
+    marginBottom: 16,
+    paddingHorizontal: 12,
+  },
+  inputIcon: { marginRight: 8 },
+  input: {
+    flex: 1,
+    paddingVertical: 16,
+    fontSize: 15,
+    color: '#111',
+  },
+  
+  btnManager: { flexDirection: 'row', backgroundColor: '#0B132B', paddingVertical: 16, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginTop: 8 },
+  btnManagerText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
+  
   footerLinks: { alignItems: 'center' },
   linkBlue: { color: '#0052FF', fontSize: 13 },
   footerText: { color: '#666', fontSize: 13 },

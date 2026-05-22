@@ -107,10 +107,19 @@ export const getDraftOrders = async () => {
 
     if (p.current_stock <= p.min_threshold * 1.5) {
       if (!ordersBySupplier[p.supplier_id]) {
+        // Creiamo un numero stabile (da 0 a 999) basato sul nome del fornitore
+        const stableNum = p.supplier_id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 1000;
+        
+        // Calcoliamo la data odierna nel formato GG-MM-AAAA
+        const today = new Date();
+        const day = String(today.getDate()).padStart(2, '0');
+        const month = String(today.getMonth() + 1).padStart(2, '0'); // I mesi partono da 0 in JS
+        const year = today.getFullYear();
+        
         ordersBySupplier[p.supplier_id] = {
-          id: `ORD-${new Date().getFullYear()}-${Math.floor(Math.random() * 1000)}`,
+          id: `ORD-${day}-${month}-${year}-${stableNum}`, // Es. ORD-22-05-2026-123
           supplierName: p.supplier_id,
-          date: new Date().toLocaleDateString('it-IT', { day: 'numeric', month: 'long' }),
+          date: today.toLocaleDateString('it-IT', { day: 'numeric', month: 'long' }),
           status: 'Bozza',
           items: []
         };

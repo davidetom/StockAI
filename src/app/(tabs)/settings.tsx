@@ -23,7 +23,6 @@ export default function SettingsScreen() {
   const loadApiKey = async () => {
     const key = await getCustomApiKey();
     if (key) {
-      // Mostra una versione parzialmente oscurata per sicurezza, es: AIzaSy...4xml
       const masked = key.length > 12 ? `${key.substring(0, 6)}...${key.substring(key.length - 4)}` : key;
       setCurrentKeyDisplay(masked);
       setInputApiKey(key);
@@ -56,9 +55,6 @@ export default function SettingsScreen() {
     );
   };
 
-  // Mock dei dati account basati sul ruolo attuale dell'utente
-  const accountEmail = user?.role === 'MANAGER' ? 'gestore@stockai.it' : 'staff.camerieri@stockai.it';
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
@@ -68,7 +64,7 @@ export default function SettingsScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.container}>
           
-          {/* SEZIONE 1: INFO ACCOUNT */}
+          {/* SEZIONE 1: INFO ACCOUNT CON DATI REALI SUPABASE */}
           <Text style={styles.sectionTitle}>IL TUO ACCOUNT</Text>
           <View style={styles.card}>
             <View style={styles.infoRow}>
@@ -77,6 +73,7 @@ export default function SettingsScreen() {
               </View>
               <View style={styles.textContainer}>
                 <Text style={styles.infoLabel}>Nome Utente</Text>
+                {/* Leggiamo il nome dai metadati */}
                 <Text style={styles.infoValue}>{user?.name || 'Utente'}</Text>
               </View>
             </View>
@@ -89,7 +86,8 @@ export default function SettingsScreen() {
               </View>
               <View style={styles.textContainer}>
                 <Text style={styles.infoLabel}>Email</Text>
-                <Text style={styles.infoValue}>{accountEmail}</Text>
+                {/* Leggiamo la VERA email associata all'account Supabase */}
+                <Text style={styles.infoValue}>{user?.email || 'Nessuna email'}</Text>
               </View>
             </View>
 
@@ -119,7 +117,7 @@ export default function SettingsScreen() {
               </View>
             </View>
           </View>
-
+          
           {/* SEZIONE 2: SWITCH MODALITÀ AVANZATA */}
           <View style={[styles.card, styles.toggleCard]}>
             <View style={{ flex: 1, marginRight: 8 }}>
