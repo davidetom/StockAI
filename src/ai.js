@@ -185,3 +185,51 @@ export const generateInventoryTemplate = async (industryType, availableIcons = [
     return null;
   }
 };
+
+// 6. SCANSIONE FATTURE PER ONBOARDING (VISION)
+export const scanOnboardingReceipt = async (base64Image, mimeType, existingCategories = [], availableIcons = []) => {
+  try {
+    const genAI = await getGenAIInstance();
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+    const prompt = `
+    Sei un esperto di logistica. Leggi la fattura o il DDT allegato come immagine.
+    Questa è un'operazione di INIZIALIZZAZIONE MAGAZZINO (Cold Start), quindi tutti i prodotti sono nuovi.
+    
+    Categorie Esistenti: ${JSON.stringify(existingCategories)}
+    Icone disponibili: ${JSON.stringify(availableIcons)}
+
+    Il tuo compito:
+    1. Estrai il NOME DEL FORNITORE (chi ha emesso la fattura, di solito in alto a sinistra o al centro).
+    2. Estrai tutti i prodotti (nome e quantità).
+    3. Per ogni prodotto, deduci l'unità di misura (unit), assegna una categoria logica (category) e scegli l'icona più appropriata ESCLUSIVAMENTE dalla lista fornita (icon).
+
+    Rispondi ESCLUSIVAMENTE con un oggetto JSON valido in questo formato:
+    {
+      "supplierName": "Nome Fornitore Estratto",
+      "items": [
+        {
+          "name": "Nome prodotto",
+          "quantity": 10,
+          "unit": "pz.",
+          "category": "Nome Categoria",
+          "icon": "nome_icona"
+        }
+      ]
+    }
+    NON INCLUDERE ALTRO TESTO.
+    `;
+
+    const result = await model.generateContent([
+      prompt,
+      { inlineData: { data: base64Image, mimeType: mimeType } }
+    ]);
+    
+    const responseText = result.response.text().trim();
+    const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '');
+    return JSON.parse(cleanJson);
+  } catch (error) {
+    console.error('Errore Scansione Fattura Onboarding:', error);
+    return null;
+  }
+};

@@ -310,12 +310,14 @@ export const addMultipleProducts = async (newProductsArray) => {
   try {
     const products = await getProducts();
     
-    // Formattiamo i prodotti generati dall'IA per il nostro database
+    // Formattiamo i prodotti per il database, rispettando i dati se provengono da una fattura
     const formattedProducts = newProductsArray.map((p, index) => ({
       ...p,
       id: `PROD-${Date.now()}-${index}`,
-      supplier_id: 'Fornitore Generico', // Il gestore potrà poi assegnare il fornitore reale
-      current_stock: 0, // Iniziano a zero, pronti per il primo ordine!
+      supplier_id: p.supplier_id || 'Fornitore Generico', 
+      current_stock: p.current_stock !== undefined ? p.current_stock : 0, 
+      min_threshold: p.min_threshold || 5,
+      max_threshold: p.max_threshold || 20,
     }));
     
     const updatedProducts = [...products, ...formattedProducts];
