@@ -1,10 +1,16 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, FlatList, TouchableOpacity, Modal, ScrollView, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Clipboard from 'expo-clipboard';
-import { getDraftOrders, getTransitOrders, getProducts, addTransitOrder, completeTransitOrder } from '../../db';
 import { useFocusEffect } from '@react-navigation/native';
+import * as Clipboard from 'expo-clipboard';
+import * as ImagePicker from 'expo-image-picker';
+import React, { useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Linking, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../../auth';
+import { scanDeliveryNote } from '../../ai';
+import { addTransitOrder, completeTransitOrder, completeTransitOrderWithScan, getDraftOrders, getProducts, getTransitOrders } from '../../db';
+
+const ICON_NAMES = [
+  'baby-care', 'bakery-shop', 'bread', 'canned-food', 'catering', 'cigarette', 'cleaning-products', 'coffee', 'dairy-products', 'fast-food', 'groceries', 'liquor', 'meat', 'medicine', 'pantry', 'personal-care', 'pet-food', 'seafood', 'soft-drink', 'sweet', 'takeaway'
+];
 
 export default function OrdersScreen() {
   const { user } = useAuth();
@@ -21,6 +27,11 @@ export default function OrdersScreen() {
   const [isEditModalVisible, setEditModalVisible] = useState(false);
   const [isPreviewModalVisible, setPreviewModalVisible] = useState(false);
   const [isAddingProduct, setIsAddingProduct] = useState(false);
+
+  // --- STATI PER LA SCANSIONE BOLLA ---
+  const [isScanning, setIsScanning] = useState(false);
+  const [isScanReviewModalVisible, setIsScanReviewModalVisible] = useState(false);
+  const [scannedItems, setScannedItems] = useState<any[]>([]);
 
   useFocusEffect(
     React.useCallback(() => { loadData(); }, [])
@@ -52,10 +63,9 @@ export default function OrdersScreen() {
   const handleCopy = async (order: any) => {
     const text = generateOrderText(order);
     await Clipboard.setStringAsync(text);
-    showToast("✅ Ordine copiato negli appunti");
+    showToast("✅ Copiato negli appunti");
   };
 
-  // L'ordine passa in transito!
   const handleSendWhatsApp = async (order: any) => {
     const text = encodeURIComponent(generateOrderText(order));
     Linking.openURL(`whatsapp://send?text=${text}`).catch(() => {
@@ -66,65 +76,119 @@ export default function OrdersScreen() {
     await loadData();
     
     setPreviewModalVisible(false);
-    setActiveTab('transit'); // Spostiamo l'utente nella tab dei transiti per fargli vedere dove è finito
+    setActiveTab('transit'); 
     showToast("🚀 Ordine in transito!");
   };
 
-  // La merce è arrivata!
+  // Conferma CIECA classica
   const handleOrderDelivered = async (order: any) => {
     await completeTransitOrder(order.id, order.items);
     await loadData();
     showToast("📦 Merce caricata in magazzino!");
   };
 
+  // --- LOGICA FOTOCAMERA E INTELLIGENZA ARTIFICIALE ---
+  const handleScanBolla = async (order: any) => {
+    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+    if (permissionResult.granted === false) {
+      Alert.alert("Permesso negato", "L'accesso alla fotocamera è necessario per leggere i documenti.");
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      base64: true,
+      quality: 0.6, // Compresso per velocizzare l'upload all'IA
+    });
+
+    if (!result.canceled && result.assets[0].base64) {
+      setActiveOrder(order);
+      setIsScanning(true);
+      
+      const uniqueCategories = Array.from(new Set(allProducts.map(p => p.category).filter(c => c)));
+
+      const aiResult = await scanDeliveryNote(
+        result.assets[0].base64,
+        result.assets[0].mimeType || 'image/jpeg',
+        allProducts,
+        order.supplierName,
+        uniqueCategories,
+        ICON_NAMES
+      );
+
+      if (aiResult && aiResult.items) {
+        // Formattiamo per aggiungere i campi input locali per i NUOVI prodotti
+        const formatted = aiResult.items.map((item: any) => ({
+            ...item,
+            minThreshold: item.isNew ? '5' : undefined,
+            maxThreshold: item.isNew ? '20' : undefined
+        }));
+        setScannedItems(formatted);
+        setIsScanReviewModalVisible(true);
+      } else {
+        Alert.alert("Errore", "L'IA è sovraccarica o non è riuscita a leggere la bolla. Riprova o usa la conferma manuale.");
+      }
+      setIsScanning(false);
+    }
+  };
+
+  // Funzione generica per aggiornare qualsiasi campo della scansione
+  const updateScannedItem = (index: number, field: string, value: any) => {
+    const updated = [...scannedItems];
+    updated[index][field] = value;
+    setScannedItems(updated);
+  };
+
+  const confirmScannedDelivery = async () => {
+    setIsScanning(true); 
+    
+    // Assicuriamoci che la quantità sia sempre un numero valido (fallback a 0 se vuoto) prima di salvare
+    const sanitizedItems = scannedItems.map(item => ({
+      ...item,
+      quantity: Number(item.quantity) || 0
+    }));
+
+    await completeTransitOrderWithScan(activeOrder.id, sanitizedItems, activeOrder.supplierName);
+    setIsScanReviewModalVisible(false);
+    setIsScanning(false);
+    await loadData();
+    showToast("📸 Merce scansionata caricata con successo!");
+  };
+
+  // --- LOGICA EDIT BOZZE ---
   const openEdit = (order: any) => {
     setActiveOrder(JSON.parse(JSON.stringify(order))); 
     setIsAddingProduct(false);
     setEditModalVisible(true);
   };
-
   const adjustEditQuantity = (idx: number, delta: number) => {
     const updated = { ...activeOrder };
     updated.items[idx].orderQuantity = Math.max(1, updated.items[idx].orderQuantity + delta);
     setActiveOrder(updated);
   };
-
   const removeEditItem = (idx: number) => {
     const updated = { ...activeOrder };
     updated.items.splice(idx, 1);
     setActiveOrder(updated);
   };
-
   const addEditItem = (product: any) => {
     const updated = { ...activeOrder };
     updated.items.push({ ...product, orderQuantity: 1 });
     setActiveOrder(updated);
     setIsAddingProduct(false);
   };
-
   const saveEdit = () => {
-    if (activeOrder.items.length === 0) {
-      deleteOrder();
-      return;
-    }
+    if (activeOrder.items.length === 0) { deleteOrder(); return; }
     const newOrders = draftOrders.map(o => o.id === activeOrder.id ? activeOrder : o);
     setDraftOrders(newOrders);
     setEditModalVisible(false);
-    showToast("💾 Modifiche salvate");
   };
-
   const deleteOrder = () => {
     const newOrders = draftOrders.filter(o => o.id !== activeOrder?.id);
     setDraftOrders(newOrders);
     setEditModalVisible(false);
-    showToast("🗑️ Ordine eliminato");
   };
 
-  const availableToAdd = activeOrder ? allProducts.filter(p => 
-    p.supplier_id === activeOrder.supplierName && 
-    !activeOrder.items.some((item: any) => item.id === p.id)
-  ) : [];
-
+  const availableToAdd = activeOrder ? allProducts.filter(p => p.supplier_id === activeOrder.supplierName && !activeOrder.items.some((item: any) => item.id === p.id)) : [];
   const currentList = activeTab === 'drafts' ? draftOrders : transitOrders;
 
   const renderOrderItem = ({ item }: { item: any }) => (
@@ -151,23 +215,20 @@ export default function OrdersScreen() {
         )}
       </View>
       
-      {/* BOTTONI DIVERSI IN BASE ALLA TAB */}
       {activeTab === 'drafts' ? (
         <View style={styles.actionsRow}>
           <TouchableOpacity style={styles.btnOutline} onPress={() => handleCopy(item)}>
-            <Ionicons name="copy-outline" size={16} color="#000" style={{marginRight: 6}} />
+            <Ionicons name="copy-outline" size={16} color="#000" style={{marginRight: 4}} />
             <Text style={styles.btnOutlineText}>Copia</Text>
           </TouchableOpacity>
-          
-          {/* Mostriamo questi bottoni SOLO se è MANAGER */}
           {isManager && (
             <>
               <TouchableOpacity style={styles.btnPrimary} onPress={() => openEdit(item)}>
-                <Ionicons name="pencil" size={16} color="#FFF" style={{marginRight: 6}} />
+                <Ionicons name="pencil" size={16} color="#FFF" style={{marginRight: 4}} />
                 <Text style={styles.btnPrimaryText}>Modifica</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.btnDark} onPress={() => { setActiveOrder(item); setPreviewModalVisible(true); }}>
-                <Ionicons name="paper-plane-outline" size={16} color="#FFF" style={{marginRight: 6}} />
+                <Ionicons name="paper-plane-outline" size={16} color="#FFF" style={{marginRight: 4}} />
                 <Text style={styles.btnDarkText}>Vedi</Text>
               </TouchableOpacity>
             </>
@@ -175,18 +236,22 @@ export default function OrdersScreen() {
         </View>
       ) : (
         <View style={styles.actionsRow}>
-          {/* Lo Staff può solo visualizzare cosa è in transito */}
           <TouchableOpacity style={styles.btnOutline} onPress={() => { setActiveOrder(item); setPreviewModalVisible(true); }}>
-            <Ionicons name="eye-outline" size={16} color="#000" style={{marginRight: 6}} />
-            <Text style={styles.btnOutlineText}>Vedi Ordine</Text>
+            <Ionicons name="eye-outline" size={16} color="#000" style={{marginRight: 4}} />
+            <Text style={styles.btnOutlineText}>Vedi</Text>
           </TouchableOpacity>
           
-          {/* Solo il MANAGER può confermare l'arrivo della merce */}
           {isManager && (
-            <TouchableOpacity style={[styles.btnPrimary, {backgroundColor: '#1E8E3E'}]} onPress={() => handleOrderDelivered(item)}>
-              <Ionicons name="checkmark-done" size={16} color="#FFF" style={{marginRight: 6}} />
-              <Text style={styles.btnPrimaryText}>Segna Consegnato</Text>
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity style={[styles.btnDark, {backgroundColor: '#1C2541'}]} onPress={() => handleScanBolla(item)}>
+                <Ionicons name="camera-outline" size={16} color="#FFF" style={{marginRight: 4}} />
+                <Text style={styles.btnDarkText}>Bolla</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.btnPrimary, {backgroundColor: '#1E8E3E'}]} onPress={() => handleOrderDelivered(item)}>
+                <Ionicons name="checkmark-done" size={16} color="#FFF" style={{marginRight: 4}} />
+                <Text style={styles.btnPrimaryText}>Conferma</Text>
+              </TouchableOpacity>
+            </>
           )}
         </View>
       )}
@@ -199,7 +264,6 @@ export default function OrdersScreen() {
         <Text style={styles.headerTitle}>Gestione Ordini</Text>
       </View>
 
-      {/* SELETTORE TAB */}
       <View style={styles.segmentContainer}>
         <TouchableOpacity style={[styles.segmentBtn, activeTab === 'drafts' && styles.segmentActive]} onPress={() => setActiveTab('drafts')}>
           <Text style={[styles.segmentText, activeTab === 'drafts' && styles.segmentTextActive]}>Da Effettuare ({draftOrders.length})</Text>
@@ -217,13 +281,81 @@ export default function OrdersScreen() {
         <FlatList data={currentList} keyExtractor={item => item.id} renderItem={renderOrderItem} contentContainerStyle={styles.listContainer} />
       )}
 
+      {/* OVERLAY DI CARICAMENTO DURANTE LA SCANSIONE IA */}
+      {isScanning && (
+        <View style={styles.fullScreenLoader}>
+           <ActivityIndicator size="large" color="#FFF" />
+           <Text style={{color: '#FFF', marginTop: 12, fontWeight: 'bold'}}>Elaborazione in corso...</Text>
+        </View>
+      )}
+
       {toastMsg && (
         <View style={styles.toastContainer}>
           <Text style={styles.toastText}>{toastMsg}</Text>
         </View>
       )}
 
-      {/* MODALE: MODIFICA */}
+      {/* MODALE: REVISIONE BOLLA SCANSIONATA DALL'IA */}
+      <Modal visible={isScanReviewModalVisible} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setIsScanReviewModalVisible(false)}><Ionicons name="close" size={28} color="#000" /></TouchableOpacity>
+            <Text style={styles.modalTitle}>Riepilogo Bolla IA</Text>
+            <View style={{width: 28}} />
+          </View>
+          <ScrollView contentContainerStyle={{padding: 16}}>
+            <Text style={{marginBottom: 16, color: '#666'}}>Controlla le quantità lette dall'IA. I prodotti nuovi richiedono le soglie Min e Max.</Text>
+            
+            {scannedItems.map((item, idx) => (
+              <View key={idx} style={[styles.scannedItemBox, item.isNew && styles.scannedItemBoxNew]}>
+                <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
+                  <View style={{flex: 1, paddingRight: 10}}>
+                    <Text style={{fontWeight: 'bold', fontSize: 16, color: '#111'}}>{item.name}</Text>
+                    {item.isNew && <Text style={{color: '#0052FF', fontSize: 12, fontWeight: '600', marginTop: 2}}>✨ Nuovo • {item.category || 'Generico'}</Text>}
+                  </View>
+                  
+                  {/* EDIT QUANTITÀ DIRETTO */}
+                  <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                    <Text style={{fontSize: 18, fontWeight: 'bold', color: '#1E8E3E'}}>+</Text>
+                    <TextInput 
+                      style={[styles.smallInput, { width: 50, textAlign: 'center', marginHorizontal: 4, paddingVertical: 6, fontSize: 16, fontWeight: 'bold', color: '#1E8E3E' }]}
+                      keyboardType="numeric"
+                      value={String(item.quantity)}
+                      onChangeText={(t) => {
+                        // Accetta solo numeri, o campo vuoto temporaneo se cancella
+                        const numericVal = parseInt(t.replace(/[^0-9]/g, ''));
+                        updateScannedItem(idx, 'quantity', isNaN(numericVal) ? '' : numericVal);
+                      }}
+                    />
+                    <Text style={{fontSize: 14, fontWeight: 'bold', color: '#1E8E3E'}}>{item.unit}</Text>
+                  </View>
+                </View>
+
+                {item.isNew && (
+                  <View style={{flexDirection: 'row', gap: 12, marginTop: 16}}>
+                    <View style={{flex: 1}}>
+                      <Text style={{fontSize: 12, color: '#666', marginBottom: 4}}>Soglia Min</Text>
+                      <TextInput style={styles.smallInput} keyboardType="numeric" value={item.minThreshold} onChangeText={(t) => updateScannedItem(idx, 'minThreshold', t)} />
+                    </View>
+                    <View style={{flex: 1}}>
+                      <Text style={{fontSize: 12, color: '#666', marginBottom: 4}}>Soglia Max</Text>
+                      <TextInput style={styles.smallInput} keyboardType="numeric" value={item.maxThreshold} onChangeText={(t) => updateScannedItem(idx, 'maxThreshold', t)} />
+                    </View>
+                  </View>
+                )}
+              </View>
+            ))}
+          </ScrollView>
+
+          <View style={styles.modalFooter}>
+             <TouchableOpacity style={[styles.btnPrimary, { flex: 0, width: '100%', paddingVertical: 16, justifyContent: 'center'}]} onPress={confirmScannedDelivery}>
+                <Text style={[styles.btnPrimaryText, {fontSize: 16}]}>Conferma Carico Merce</Text>
+             </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      {/* MODALE: MODIFICA BOZZA */}
       <Modal visible={isEditModalVisible} animationType="slide" presentationStyle="pageSheet">
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
@@ -231,31 +363,21 @@ export default function OrdersScreen() {
             <Text style={styles.modalTitle}>Modifica ordine</Text>
             <TouchableOpacity onPress={deleteOrder}><Ionicons name="trash-outline" size={24} color="#D93025" /></TouchableOpacity>
           </View>
-          
           <ScrollView contentContainerStyle={{padding: 16}}>
             {activeOrder?.items.map((item: any, idx: number) => (
               <View key={idx} style={styles.editItemRow}>
                 <Text style={styles.editItemName} numberOfLines={2}>{item.name}</Text>
-                
                 <View style={styles.editControls}>
                   <View style={styles.stepper}>
-                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustEditQuantity(idx, -1)}>
-                      <Text style={styles.stepperText}>-</Text>
-                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustEditQuantity(idx, -1)}><Text style={styles.stepperText}>-</Text></TouchableOpacity>
                     <Text style={styles.stepperValue}>{item.orderQuantity}</Text>
-                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustEditQuantity(idx, 1)}>
-                      <Text style={styles.stepperText}>+</Text>
-                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustEditQuantity(idx, 1)}><Text style={styles.stepperText}>+</Text></TouchableOpacity>
                   </View>
                   <Text style={styles.editUnit}>{item.unit}</Text>
-                  
-                  <TouchableOpacity style={styles.removeBtn} onPress={() => removeEditItem(idx)}>
-                    <Ionicons name="close-outline" size={20} color="#D93025" />
-                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.removeBtn} onPress={() => removeEditItem(idx)}><Ionicons name="close-outline" size={20} color="#D93025" /></TouchableOpacity>
                 </View>
               </View>
             ))}
-
             {!isAddingProduct ? (
               <TouchableOpacity style={styles.btnAddProduct} onPress={() => setIsAddingProduct(true)}>
                 <Ionicons name="add-outline" size={20} color="#0052FF" />
@@ -264,7 +386,6 @@ export default function OrdersScreen() {
             ) : (
               <View style={styles.addProductsList}>
                 <Text style={styles.addProductsTitle}>Seleziona prodotto:</Text>
-                
                 {availableToAdd.length > 0 ? (
                   availableToAdd.map((p, idx) => (
                     <TouchableOpacity key={idx} style={styles.addProductItem} onPress={() => addEditItem(p)}>
@@ -273,18 +394,14 @@ export default function OrdersScreen() {
                     </TouchableOpacity>
                   ))
                 ) : (
-                  <Text style={{color: '#666', fontStyle: 'italic', paddingVertical: 8, textAlign: 'center'}}>
-                    Tutti i prodotti del fornitore sono già nell'ordine.
-                  </Text>
+                  <Text style={{color: '#666', fontStyle: 'italic', paddingVertical: 8, textAlign: 'center'}}>Tutti i prodotti del fornitore sono già nell'ordine.</Text>
                 )}
-                
                 <TouchableOpacity style={{marginTop: 12, alignItems: 'center'}} onPress={() => setIsAddingProduct(false)}>
                   <Text style={{color: '#666', fontWeight: 'bold'}}>Chiudi</Text>
                 </TouchableOpacity>
               </View>
             )}
           </ScrollView>
-
           <View style={styles.modalFooter}>
              <TouchableOpacity style={[styles.btnPrimary, { flex: 0, width: '100%', paddingVertical: 16, justifyContent: 'center'}]} onPress={saveEdit}>
                 <Text style={[styles.btnPrimaryText, {fontSize: 16}]}>Salva modifiche</Text>
@@ -301,7 +418,6 @@ export default function OrdersScreen() {
             <Text style={styles.modalTitle}>{activeTab === 'drafts' ? 'Invia ordine' : 'Dettaglio ordine'}</Text>
             <View style={{width: 28}} />
           </View>
-          
           <ScrollView contentContainerStyle={{padding: 16}}>
             <Text style={styles.sectionLabel}>CANALE DI INVIO</Text>
             <View style={styles.channelBox}>
@@ -311,13 +427,11 @@ export default function OrdersScreen() {
                 <Text style={{fontSize: 12, color: '#666'}}>Fornitore: {activeOrder?.supplierName}</Text>
               </View>
             </View>
-
             <Text style={styles.sectionLabel}>MESSAGGIO</Text>
             <View style={styles.previewTextBox}>
               <Text style={{fontSize: 15, lineHeight: 22}}>{activeOrder && generateOrderText(activeOrder)}</Text>
             </View>
           </ScrollView>
-
           {activeTab === 'drafts' && (
             <View style={styles.modalFooter}>
               <TouchableOpacity style={[styles.btnDark, { flex: 0, width: '100%', paddingVertical: 16, justifyContent: 'center', flexDirection: 'row'}]} onPress={() => handleSendWhatsApp(activeOrder)}>
@@ -373,11 +487,18 @@ const styles = StyleSheet.create({
   toastContainer: { position: 'absolute', bottom: 20, alignSelf: 'center', backgroundColor: '#333', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 24, elevation: 5 },
   toastText: { color: '#FFF', fontWeight: 'bold' },
 
+  fullScreenLoader: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
+
   modalContainer: { flex: 1, backgroundColor: '#F8F9FA' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#FFF', borderBottomWidth: 1, borderColor: '#eee' },
   modalTitle: { fontSize: 18, fontWeight: 'bold' },
   modalFooter: { padding: 16, backgroundColor: '#FFF', borderTopWidth: 1, borderColor: '#eee' },
   
+  /* Stili Scansione Bolla */
+  scannedItemBox: { backgroundColor: '#FFF', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#EAEAEA', marginBottom: 12 },
+  scannedItemBoxNew: { borderColor: '#0052FF', backgroundColor: '#F0F4FF' },
+  smallInput: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#CCC', padding: 10, borderRadius: 8, fontSize: 14 },
+
   editItemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#FFF', padding: 16, marginBottom: 8, borderRadius: 8, borderWidth: 1, borderColor: '#eee' },
   editItemName: { flex: 1, fontWeight: '500', marginRight: 8 },
   editControls: { flexDirection: 'row', alignItems: 'center' },

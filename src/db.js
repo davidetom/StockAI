@@ -247,3 +247,47 @@ export const applyProductCategories = async (aiMapping) => {
     console.error('Errore applicazione categorie e icone', e);
   }
 };
+
+export const completeTransitOrderWithScan = async (orderId, scannedItems, supplierName) => {
+  try {
+    // 1. Elimina l'ordine dalla lista dei transiti
+    const orders = await getTransitOrders();
+    const updatedOrders = orders.filter(o => o.id !== orderId);
+    await AsyncStorage.setItem(TRANSIT_ORDERS_KEY, JSON.stringify(updatedOrders));
+
+    // 2. Prepara l'aggiornamento prodotti
+    const products = await getProducts();
+    let newProductsToInsert = [];
+    
+    for (const item of scannedItems) {
+      if (item.isNew) {
+        // Se è nuovo, lo creiamo e assegnamo la giacenza iniziale pari a quanto consegnato
+        const newProd = {
+          id: `PROD-${Date.now()}-${Math.floor(Math.random()*10000)}`,
+          name: item.name,
+          supplier_id: supplierName,
+          unit: item.unit,
+          min_threshold: parseInt(item.minThreshold) || 5, // Dati scelti dall'utente
+          max_threshold: parseInt(item.maxThreshold) || 20,
+          current_stock: item.quantity,
+          category: item.category,
+          icon: item.icon
+        };
+        newProductsToInsert.push(newProd);
+      } else {
+        // Se esiste già, sommiamo la quantità
+        const idx = products.findIndex(p => p.id === item.id);
+        if (idx > -1) {
+          products[idx].current_stock += item.quantity;
+        }
+      }
+    }
+    
+    // 3. Salva tutto
+    const finalProducts = [...products, ...newProductsToInsert];
+    await AsyncStorage.setItem(DB_KEY, JSON.stringify(finalProducts));
+    
+  } catch(e) {
+    console.error('Errore completamento ordine con scansione', e);
+  }
+};

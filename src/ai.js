@@ -96,3 +96,52 @@ export const transcribeAudio = async (base64Audio, mimeType) => {
     return result.response.text().trim();
   } catch (error) { return null; }
 };
+
+// 4. SCANSIONE BOLLA DI CONSEGNA (VISION)
+export const scanDeliveryNote = async (base64Image, mimeType, currentProducts, supplierName, existingCategories = [], availableIcons = []) => {
+  try {
+    const genAI = await getGenAIInstance();
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+    const prompt = `
+    Sei un esperto di logistica e analisi documenti. Leggi la bolla di consegna (o DDT/Fattura) allegata come immagine. Riguarda un ordine dal fornitore "${supplierName}".
+    
+    Database Prodotti: ${JSON.stringify(currentProducts.map(p => ({id: p.id, name: p.name, unit: p.unit})))}
+    Categorie Esistenti: ${JSON.stringify(existingCategories)}
+    Icone disponibili: ${JSON.stringify(availableIcons)}
+
+    Il tuo compito:
+    Estrai tutte le righe di prodotto consegnate e le rispettive quantità.
+    1. Se il prodotto SCANSIONATO ESISTE nel database: usa il suo "id" e imposta "isNew": false.
+    2. Se il prodotto SCANSIONATO NON ESISTE (è nuovo): imposta "id": null, "isNew": true. Per i nuovi deduci anche la "unit" (pz, kg, bottiglie, ecc.), scegli una "category" sensata (tra quelle esistenti o creane una nuova se serve davvero) e scegli un "icon" tra quelle disponibili.
+
+    Rispondi ESCLUSIVAMENTE con un oggetto JSON valido in questo formato:
+    {
+      "items": [
+        {
+          "id": "1", // usa null se è nuovo
+          "name": "Nome estratto dalla bolla",
+          "quantity": 10,
+          "unit": "pz.",
+          "isNew": false,
+          "category": null, // compila solo se isNew: true
+          "icon": null // compila solo se isNew: true
+        }
+      ]
+    }
+    NON INCLUDERE ALTRO TESTO.
+    `;
+
+    const result = await model.generateContent([
+      prompt,
+      { inlineData: { data: base64Image, mimeType: mimeType } }
+    ]);
+    
+    const responseText = result.response.text().trim();
+    const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '');
+    return JSON.parse(cleanJson);
+  } catch (error) {
+    console.error('Errore Scansione Bolla:', error);
+    return null;
+  }
+};
