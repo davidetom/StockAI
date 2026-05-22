@@ -156,7 +156,7 @@ export const generateInventoryTemplate = async (industryType, availableIcons = [
     Sei un consulente logistico per il settore HORECA. Un utente ha appena aperto un locale di tipo "${industryType}".
     Il suo magazzino è attualmente vuoto.
     
-    Genera un inventario iniziale intelligente con i 15 prodotti più indispensabili per questa specifica attività.
+    Genera un inventario iniziale intelligente con i 15/20 prodotti più indispensabili per questa specifica attività.
     
     Icone disponibili (scegli SOLO da questa lista, o null): ${JSON.stringify(availableIcons)}
 
@@ -165,9 +165,9 @@ export const generateInventoryTemplate = async (industryType, availableIcons = [
       "products": [
         {
           "name": "Nome Prodotto (es. Farina 00)",
-          "unit": "kg",
-          "min_threshold": 5,
-          "max_threshold": 25,
+          "unit": "kg", // unità di misura stimata in base al tipo di prodotto (es. kg per farine, litri per bevande, pz. per prodotti confezionati)
+          "min_threshold": 5, // o stimato in base al tipo di prodotto, se non sei sicuro usa 5 come default
+          "max_threshold": 20, // o stimato in base al tipo di prodotto, se non sei sicuro usa 20 come default
           "category": "Nome Categoria (es. Dispensa)",
           "icon": "nome_icona_scelta"
         }
@@ -202,7 +202,7 @@ export const scanOnboardingReceipt = async (base64Image, mimeType, existingCateg
     Il tuo compito:
     1. Estrai il NOME DEL FORNITORE (chi ha emesso la fattura, di solito in alto a sinistra o al centro).
     2. Estrai tutti i prodotti (nome e quantità).
-    3. Per ogni prodotto, deduci l'unità di misura (unit), assegna un valore default di 5 e 20 per i threshold, assegna una categoria logica (category) e scegli l'icona più appropriata ESCLUSIVAMENTE dalla lista fornita (icon).
+    3. Per ogni prodotto, deduci l'unità di misura (unit) e in base al tipo di prodotto e all'unità di misura deduci anche i campi min_threshold e max_threshold, assegna una categoria logica (category) e scegli l'icona più appropriata ESCLUSIVAMENTE dalla lista fornita (icon).
 
     Rispondi ESCLUSIVAMENTE con un oggetto JSON valido in questo formato:
     {
@@ -250,7 +250,9 @@ export const analyzeInventoryFile = async (base64Data, mimeType, industryType, a
     REGOLE FONDAMENTALI (PENA IL FALLIMENTO):
     1. ESTRAI SOLO ED ESCLUSIVAMENTE I PRODOTTI SCRITTI NEL DOCUMENTO. NON inventare NESSUN prodotto aggiuntivo.
     2. Se il documento contiene quantità, unità di misura (kg, pz, litri), fornitore o soglie, RISPETTALE e usale ESATTAMENTE come sono scritte.
-    3. SE (e solo se) mancano dei dati per un prodotto estratto, compila i vuoti con questi default: current_stock = 0, unit = "pz.", min_threshold = 5, max_threshold = 20, supplier_id = "Fornitore Estratto Generico".
+    3. SE (e solo se) mancano dei dati per un prodotto estratto (unità di musura, soglie), usa il buon senso basato sul tipo di prodotto e sull'industria per dedurre valori plausibili:
+      - deduci l'unità di misura logica (pz., litri, kg) e in base al tipo di prodotto e all'unità di misura deduci anche i campi min_threshold e max_threshold.
+      - compila i vuoti con questi default: current_stock = 0, supplier_id = "Fornitore Estratto Generico".
     4. Assegna a ciascun prodotto una "category" logica (es. "Bevande", "Dispensa") e un'icona appropriata scegliendola SOLO dalla lista fornita.
     
     Rispondi SOLO con questo JSON:
@@ -281,6 +283,58 @@ export const analyzeInventoryFile = async (base64Data, mimeType, industryType, a
     return JSON.parse(cleanJson).products;
   } catch (e) {
     console.error('Errore analisi file:', e);
+    return null;
+  }
+};
+
+// 8. SCANSIONE VISIVA DEGLI SCAFFALI REALI
+export const scanShelfInventory = async (base64Image, mimeType, existingCategories = [], availableIcons = []) => {
+  try {
+    const genAI = await getGenAIInstance();
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+    const prompt = `
+    Sei un'IA di visione artificiale per un gestionale di magazzino HORECA.
+    L'utente ha scattato una foto agli scaffali, ai frigoriferi o alla dispensa del suo locale.
+    
+    Categorie Esistenti: ${JSON.stringify(existingCategories)}
+    Icone disponibili: ${JSON.stringify(availableIcons)}
+
+    Il tuo compito:
+    1. Identifica tutti i prodotti visibili chiaramente (es. bottiglie di liquore, scatole di pasta, verdura).
+    2. Per ogni prodotto, estrai un nome generico o il brand se leggibile.
+    3. Stima la quantità visibile (es. se vedi 3 bottiglie di Campari, quantity = 3).
+    4. Deduci l'unità di misura logica (pz., litri, kg); in base al tipo di prodotto e all'unità di misura deduci anche i campi min_threshold e max_threshold.
+    5. Se non riesci a identificare un prodotto con certezza, IGNORALO (non inserire prodotti inventati); Unità di misura = "pz.", min_threshold = 5, max_threshold = 20 e categoria = "Varie" sono valori di default da usare SOLO se sei ragionevolmente sicuro del prodotto ma mancano dati specifici.
+    6. Assegna una categoria logica (es. "Alcolici", "Dispensa") e scegli l'icona più appropriata ESCLUSIVAMENTE dalla lista fornita.
+
+    Rispondi SOLO con un oggetto JSON valido in questo formato:
+    {
+      "items": [
+        {
+          "name": "Nome Prodotto",
+          "quantity": 3,
+          "min_threshold": 5,
+          "max_threshold": 20,
+          "unit": "pz.",
+          "category": "Nome Categoria",
+          "icon": "nome_icona"
+        }
+      ]
+    }
+    NON INCLUDERE ALTRO TESTO.
+    `;
+
+    const result = await model.generateContent([
+      prompt,
+      { inlineData: { data: base64Image, mimeType: mimeType } }
+    ]);
+    
+    const responseText = result.response.text().trim();
+    const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '');
+    return JSON.parse(cleanJson);
+  } catch (error) {
+    console.error('Errore Scansione Scaffale:', error);
     return null;
   }
 };

@@ -6,7 +6,7 @@ import * as ImagePicker from 'expo-image-picker';
 import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../../auth';
-import { analyzeInventoryFile, categorizeSingleProduct, generateInventoryTemplate, scanOnboardingReceipt } from '../../ai';
+import { analyzeInventoryFile, categorizeSingleProduct, generateInventoryTemplate, scanOnboardingReceipt, scanShelfInventory } from '../../ai';
 import { addMultipleProducts, addProduct, deleteProduct, getProducts, updateProductDetails, updateProductSupplier } from '../../db';
 
 const ICON_MAP: Record<string, any> = {
@@ -181,6 +181,46 @@ export default function WarehouseScreen() {
       }
     } catch (err) { 
       console.error(err);
+      setIsGeneratingTemplate(false);
+    }
+  };
+
+  // --- LOGICA SCANSIONE SCAFFALI REALI ---
+  const handleScanShelf = async () => {
+    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+    if (permissionResult.granted === false) return Alert.alert("Permesso negato", "La fotocamera è necessaria.");
+
+    const result = await ImagePicker.launchCameraAsync({ base64: true, quality: 0.6 });
+
+    if (!result.canceled && result.assets[0].base64) {
+      setIsGeneratingTemplate(true); // Mostriamo il caricamento a tutto schermo
+      const availableIconNames = Object.keys(ICON_MAP);
+      
+      const aiResult = await scanShelfInventory(
+        result.assets[0].base64,
+        result.assets[0].mimeType || 'image/jpeg',
+        uniqueCategories,
+        availableIconNames
+      );
+
+      if (aiResult && aiResult.items && aiResult.items.length > 0) {
+        const newItems = aiResult.items.map((item: any) => ({
+          name: item.name,
+          min_threshold: item.min_threshold || 5,
+          max_threshold: item.max_threshold || 20,
+          unit: item.unit || 'pz.',
+          category: item.category || 'Generico',
+          icon: item.icon,
+          supplier_id: 'Fornitore Generico', // Campo default da modificare dopo
+          current_stock: Number(item.quantity) || 0,
+        }));
+        
+        // Aggiungiamo i prodotti alla lista temporanea e apriamo il modale di revisione!
+        setOnboardingScannedItems(prev => [...prev, ...newItems]);
+        setIsOnboardingScanVisible(true); 
+      } else {
+        Alert.alert("Errore IA o indisponibilità", "Non sono riuscito a riconoscere i prodotti in questa foto, o il server è momentaneamente sovraccarico. Riprova fra poco.");
+      }
       setIsGeneratingTemplate(false);
     }
   };
@@ -407,12 +447,11 @@ export default function WarehouseScreen() {
           <TouchableOpacity onPress={() => isManager && setIsMenuOpen(!isMenuOpen)} disabled={!isManager}>
             <Ionicons name="menu-outline" size={28} color={isManager ? "#000" : "#CCC"} />
           </TouchableOpacity>
+          
           <Text style={styles.headerTitle}>{viewMode === 'suppliers' ? 'Fornitori' : 'Magazzino'}</Text>
-          <View style={styles.headerIcons}>
-            <TouchableOpacity onPress={logout}>
-              <Ionicons name="log-out-outline" size={26} color="#D93025" />
-            </TouchableOpacity>
-          </View>
+          
+          {/* Sostituito il logout con un placeholder invisibile per tenere il titolo centrato */}
+          <View style={{ width: 28 }} />
         </View>
         
         {isMenuOpen && isManager && (
@@ -484,18 +523,24 @@ export default function WarehouseScreen() {
                   <View style={styles.dividerLine} /><Text style={styles.dividerText}>OPPURE</Text><View style={styles.dividerLine} />
                 </View>
                 
-                {/* BOTTONI FOTO E FILE */}
-                <View style={{flexDirection: 'row', gap: 12, width: '100%'}}>
+                {/* BOTTONI FOTO E FILE (Riga superiore) */}
+                <View style={{flexDirection: 'row', gap: 12, width: '100%', marginBottom: 12}}>
                   <TouchableOpacity style={[styles.btnFaldoni, {flex: 1, paddingHorizontal: 12}]} onPress={() => setIsOnboardingScanVisible(true)}>
-                    <Ionicons name="camera-outline" size={20} color="#FFF" style={{marginRight: 6}} />
-                    <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 14}}>Fotografa fatture</Text>
+                    <Ionicons name="document-text-outline" size={20} color="#FFF" style={{marginRight: 6}} />
+                    <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 13}}>Fotografa fatture</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity style={[styles.btnFaldoni, {flex: 1, paddingHorizontal: 12, backgroundColor: '#0052FF'}]} onPress={handlePickFile}>
                     <Ionicons name="document-attach-outline" size={20} color="#FFF" style={{marginRight: 6}} />
-                    <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 14}}>Carica (PDF/CSV)</Text>
+                    <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 13}}>Carica (PDF/CSV)</Text>
                   </TouchableOpacity>
                 </View>
+
+                {/* NUOVO BOTTONE SCAFFALI (Centrato in basso) */}
+                <TouchableOpacity style={[styles.btnFaldoni, {backgroundColor: '#1E8E3E', width: '100%'}]} onPress={handleScanShelf}>
+                   <Ionicons name="scan-outline" size={20} color="#FFF" style={{marginRight: 8}} />
+                   <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 16}}>Scansiona scaffali</Text>
+                </TouchableOpacity>
                 
                 {/* TASTO MANUALE (Rimane in fondo) */}
                 <TouchableOpacity style={{marginTop: 32}} onPress={() => setIsAddModalVisible(true)}>
@@ -566,7 +611,7 @@ export default function WarehouseScreen() {
             <TouchableOpacity onPress={() => setIsOnboardingScanVisible(false)}>
               <Ionicons name="close" size={28} color="#000" />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Fatture Scansionate</Text>
+            <Text style={styles.headerTitle}>Prodotti Scansionati</Text>
             <View style={{width: 28}}/>
           </View>
           
