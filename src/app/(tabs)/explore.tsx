@@ -674,7 +674,7 @@ export default function WarehouseScreen() {
               {isScanningReceipt ? <ActivityIndicator size="small" color="#0052FF" /> : (
                 <>
                   <Ionicons name="camera" size={20} color="#0052FF" style={{marginRight: 8}}/>
-                  <Text style={{color: '#0052FF', fontWeight: 'bold'}}>+ Fotografa Fattura</Text>
+                  <Text style={{color: '#0052FF', fontWeight: 'bold'}}>+ Fotografa altro</Text>
                 </>
               )}
             </TouchableOpacity>
