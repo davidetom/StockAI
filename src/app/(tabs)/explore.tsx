@@ -78,6 +78,12 @@ export default function WarehouseScreen() {
   const [modalPhone, setModalPhone] = useState('');
   const AVAILABLE_CHANNELS = ['WhatsApp', 'Email', 'Telefono', 'App B2B', 'Rappresentante', 'Altro'];
 
+  const mergeAndDeduplicateItems = (existingItems: any[], newItems: any[]) => {
+    const existingNames = new Set(existingItems.map(i => i.name.toLowerCase().trim()));
+    const itemsToAdd = newItems.filter((item: any) => !existingNames.has(item.name.toLowerCase().trim()));
+    return [...existingItems, ...itemsToAdd];
+  };
+
   useFocusEffect(
     React.useCallback(() => { loadData(); }, [])
   );
@@ -132,7 +138,7 @@ export default function WarehouseScreen() {
     const result = await ImagePicker.launchCameraAsync({ base64: true, quality: 0.6 });
 
     if (!result.canceled && result.assets[0].base64) {
-      setIsScanningReceipt(true);
+      setIsGeneratingTemplate(true);
       const availableIconNames = Object.keys(ICON_MAP);
 
       const aiResult = await scanOnboardingReceipt(
@@ -154,11 +160,12 @@ export default function WarehouseScreen() {
           current_stock: Number(item.quantity) || 0,
         }));
 
-        setOnboardingScannedItems(prev => [...prev, ...newItems]);
+        setOnboardingScannedItems(prev => mergeAndDeduplicateItems(prev, newItems));
+        setIsOnboardingScanVisible(true);
       } else {
         Alert.alert("Errore IA", "Non sono riuscito a leggere bene la ricevuta, riprova scattando con più luce.");
       }
-      setIsScanningReceipt(false);
+      setIsGeneratingTemplate(false);
     }
   };
 
@@ -192,7 +199,7 @@ export default function WarehouseScreen() {
     setIsOnboardingScanVisible(false);
     await loadData();
     setIsUpdatingCategories(false);
-    Alert.alert("Faldoni Svuotati! 🚀", "I prodotti scansionati sono stati aggiunti con successo al tuo magazzino.");
+    Alert.alert("Magazzino Inizializzato! 🚀", "I prodotti sono stati aggiunti con successo al tuo magazzino.");
   };
 
   // --- LOGICA CARICAMENTO FILE (PDF/CSV/TXT) ---
@@ -217,9 +224,8 @@ export default function WarehouseScreen() {
         const aiProducts = await analyzeInventoryFile(base64File, mimeType, customIndustry || "Generico", availableIconNames);
 
         if (aiProducts && aiProducts.length > 0) {
-          await addMultipleProducts(aiProducts);
-          await loadData();
-          Alert.alert("Importazione Riuscita! 📄", `L'IA ha letto il file e importato esattamente ${aiProducts.length} prodotti nel tuo magazzino.`);
+          setOnboardingScannedItems(prev => mergeAndDeduplicateItems(prev, aiProducts));
+          setIsOnboardingScanVisible(true);
         } else {
           Alert.alert("Errore di Lettura", "Non sono riuscito a estrarre prodotti dal file. Assicurati che sia un PDF, CSV o TXT leggibile.");
         }
@@ -262,7 +268,7 @@ export default function WarehouseScreen() {
         }));
 
         // Aggiungiamo i prodotti alla lista temporanea e apriamo il modale di revisione!
-        setOnboardingScannedItems(prev => [...prev, ...newItems]);
+        setOnboardingScannedItems(prev => mergeAndDeduplicateItems(prev, newItems));
         setIsOnboardingScanVisible(true);
       } else {
         Alert.alert("Errore IA o indisponibilità", "Non sono riuscito a riconoscere i prodotti in questa foto, o il server è momentaneamente sovraccarico. Riprova fra poco.");
@@ -283,9 +289,9 @@ export default function WarehouseScreen() {
     const aiProducts = await generateInventoryTemplate(industryType, Object.keys(ICON_MAP));
 
     if (aiProducts && aiProducts.length > 0) {
-      await addMultipleProducts(aiProducts);
+      setOnboardingScannedItems(prev => mergeAndDeduplicateItems(prev, aiProducts));
       setCustomIndustry('');
-      await loadData();
+      setIsOnboardingScanVisible(true);
     } else {
       Alert.alert("Errore", "I server sono momentaneamente sovraccarichi.");
     }
@@ -601,7 +607,7 @@ export default function WarehouseScreen() {
 
                 {/* BOTTONI FOTO E FILE (Riga superiore) */}
                 <View style={{ flexDirection: 'row', gap: 12, width: '100%', marginBottom: 12 }}>
-                  <TouchableOpacity style={[styles.btnFaldoni, { flex: 1, paddingHorizontal: 12 }]} onPress={() => setIsOnboardingScanVisible(true)}>
+                  <TouchableOpacity style={[styles.btnFaldoni, { flex: 1, paddingHorizontal: 12 }]} onPress={handleScanFaldone}>
                     <Ionicons name="document-text-outline" size={20} color="#FFF" style={{ marginRight: 6 }} />
                     <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 13 }}>Fotografa fatture</Text>
                   </TouchableOpacity>
@@ -617,6 +623,14 @@ export default function WarehouseScreen() {
                   <Ionicons name="scan-outline" size={20} color="#FFF" style={{ marginRight: 8 }} />
                   <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16 }}>Scansiona scaffali</Text>
                 </TouchableOpacity>
+
+                {onboardingScannedItems.length > 0 && (
+                  <TouchableOpacity style={{ marginTop: 24, width: '100%', backgroundColor: '#0052FF', paddingVertical: 16, borderRadius: 12, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 5 }} onPress={() => setIsOnboardingScanVisible(true)}>
+                    <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16 }}>
+                      Visualizza {onboardingScannedItems.length} prodotti in attesa
+                    </Text>
+                  </TouchableOpacity>
+                )}
 
                 {/* TASTO MANUALE (Rimane in fondo) */}
                 <TouchableOpacity style={{ marginTop: 32 }} onPress={() => setIsAddModalVisible(true)}>
@@ -687,7 +701,7 @@ export default function WarehouseScreen() {
             <TouchableOpacity onPress={() => setIsOnboardingScanVisible(false)}>
               <Ionicons name="close" size={28} color="#000" />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Prodotti Scansionati</Text>
+            <Text style={styles.headerTitle}>Prodotti in Attesa</Text>
             <View style={{ width: 28 }} />
           </View>
 
@@ -695,7 +709,7 @@ export default function WarehouseScreen() {
             {onboardingScannedItems.length === 0 ? (
               <View style={{ alignItems: 'center', marginTop: 40 }}>
                 <Ionicons name="documents-outline" size={48} color="#CCC" />
-                <Text style={{ color: '#666', marginTop: 12, textAlign: 'center' }}>Nessuna fattura scansionata.{'\n'}Inizia a fotografare!</Text>
+                <Text style={{ color: '#666', marginTop: 12, textAlign: 'center' }}>Nessun prodotto in attesa.{'\n'}Usa uno dei metodi per iniziare!</Text>
               </View>
             ) : (
               onboardingScannedItems.map((item, idx) => (
@@ -746,17 +760,15 @@ export default function WarehouseScreen() {
           </ScrollView>
 
           <View style={{ padding: 16, backgroundColor: '#FFF', borderTopWidth: 1, borderColor: '#eee', gap: 12 }}>
-            <TouchableOpacity style={[styles.btnOutline, { borderStyle: 'dashed', borderColor: '#0052FF', flexDirection: 'row', justifyContent: 'center' }]} onPress={handleScanFaldone} disabled={isScanningReceipt}>
-              {isScanningReceipt ? <ActivityIndicator size="small" color="#0052FF" /> : (
+            <TouchableOpacity style={[{ borderStyle: 'dashed', borderColor: '#0052FF', flexDirection: 'row', justifyContent: 'center', padding: 14, borderRadius: 8, borderWidth: 1 }]} onPress={() => setIsOnboardingScanVisible(false)}>
                 <>
-                  <Ionicons name="camera" size={20} color="#0052FF" style={{ marginRight: 8 }} />
-                  <Text style={{ color: '#0052FF', fontWeight: 'bold' }}>+ Fotografa altro</Text>
+                  <Ionicons name="add-circle-outline" size={20} color="#0052FF" style={{ marginRight: 8 }} />
+                  <Text style={{ color: '#0052FF', fontWeight: 'bold' }}>+ Aggiungi con un altro metodo</Text>
                 </>
-              )}
             </TouchableOpacity>
 
             {onboardingScannedItems.length > 0 && (
-              <TouchableOpacity style={styles.btnPrimaryFull} onPress={confirmFaldoni}>
+              <TouchableOpacity style={[{ padding: 16, borderRadius: 8, alignItems: 'center', backgroundColor: '#0052FF' }]} onPress={confirmFaldoni}>
                 <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16 }}>Salva in Magazzino ({onboardingScannedItems.length})</Text>
               </TouchableOpacity>
             )}
