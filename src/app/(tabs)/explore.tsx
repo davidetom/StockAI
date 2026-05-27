@@ -36,7 +36,7 @@ const ICON_MAP: Record<string, any> = {
 
 export default function WarehouseScreen() {
   const { user, logout } = useAuth();
-  const isManager = user?.role === 'MANAGER';
+  const isManager = user?.role === 'MANAGER' || user?.role === 'PROPRIETARIO';
 
   const [products, setProducts] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');

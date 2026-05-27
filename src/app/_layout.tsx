@@ -2,10 +2,12 @@ import React, { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { AuthProvider, useAuth } from '../../auth'; 
 import { initDB } from '../db';
+import { SafeAreaView, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 // Componente per proteggere le rotte
 function RootLayoutNav() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, logout } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
@@ -27,6 +29,23 @@ function RootLayoutNav() {
       router.replace('/' as any);
     }
   }, [user, isLoading, segments]);
+
+  if (user && user.status === 'pending') {
+    return (
+      <SafeAreaView style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8F9FA' }}>
+        <View style={{ padding: 24, alignItems: 'center' }}>
+          <Ionicons name="time-outline" size={80} color="#0052FF" />
+          <Text style={{ fontSize: 24, fontWeight: 'bold', marginTop: 16, textAlign: 'center', color: '#111' }}>In Attesa di Approvazione</Text>
+          <Text style={{ textAlign: 'center', color: '#666', marginTop: 12, fontSize: 16 }}>
+            Il proprietario del locale deve approvare la tua richiesta prima che tu possa accedere al magazzino.
+          </Text>
+          <TouchableOpacity onPress={logout} style={{ marginTop: 32, paddingVertical: 14, paddingHorizontal: 32, backgroundColor: '#D93025', borderRadius: 8 }}>
+            <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16 }}>Disconnetti</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <Stack screenOptions={{ headerShown: false }}>

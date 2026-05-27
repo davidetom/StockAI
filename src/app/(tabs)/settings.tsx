@@ -1,24 +1,48 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../../auth';
 import { getCustomApiKey, saveCustomApiKey } from '../../db';
+import { supabase } from '../../supabase';
 
 export default function SettingsScreen() {
   const { user, logout } = useAuth();
-  
+
   // Stati UI e Form
   const [isDebugOpen, setIsDebugOpen] = useState(false);
   const [currentKeyDisplay, setCurrentKeyDisplay] = useState('Predefinita (.env)');
   const [inputApiKey, setInputApiKey] = useState('');
 
+  // Stati Multi-Tenant
+  const [localeName, setLocaleName] = useState<string>('Caricamento...');
+  const [staff, setStaff] = useState<any[]>([]);
+  const [isLoadingStaff, setIsLoadingStaff] = useState(false);
+
   // Ricarica la chiave salvata ogni volta che la schermata va in focus
   useFocusEffect(
     React.useCallback(() => {
       loadApiKey();
-    }, [])
+      fetchLocaleInfo();
+      if (user?.role === 'PROPRIETARIO') {
+        fetchStaff();
+      }
+    }, [user])
   );
+
+  const fetchLocaleInfo = async () => {
+    if (!user?.locale_id) return;
+    const { data } = await supabase.from('locali').select('name').eq('id', user.locale_id).single();
+    if (data) setLocaleName(data.name);
+  };
+
+  const fetchStaff = async () => {
+    if (!user?.locale_id) return;
+    setIsLoadingStaff(true);
+    const { data, error } = await supabase.from('profiles').select('*').eq('locale_id', user.locale_id);
+    if (data) setStaff(data);
+    setIsLoadingStaff(false);
+  };
 
   const loadApiKey = async () => {
     const key = await getCustomApiKey();
@@ -44,7 +68,8 @@ export default function SettingsScreen() {
       "Vuoi tornare ad utilizzare la chiave API predefinita del sistema?",
       [
         { text: "Annulla", style: "cancel" },
-        { text: "Ripristina", style: "destructive", onPress: async () => {
+        {
+          text: "Ripristina", style: "destructive", onPress: async () => {
             await saveCustomApiKey('');
             setInputApiKey('');
             setCurrentKeyDisplay('Predefinita (.env)');
@@ -55,15 +80,57 @@ export default function SettingsScreen() {
     );
   };
 
+  // Azioni PROPRIETARIO
+  const handleApprove = async (id: string) => {
+    await supabase.from('profiles').update({ status: 'approved' }).eq('id', id);
+    fetchStaff();
+  };
+
+  const handleReject = async (id: string) => {
+    Alert.alert("Rifiuta Utente", "Sei sicuro di voler rifiutare questo utente? Verrà rimosso dal locale.", [
+      { text: "Annulla", style: "cancel" },
+      {
+        text: "Rifiuta", style: "destructive", onPress: async () => {
+          await supabase.from('profiles').delete().eq('id', id);
+          fetchStaff();
+        }
+      }
+    ]);
+  };
+
+  const handleChangeRole = (member: any) => {
+    if (member.id === user.id) {
+      Alert.alert("Attenzione!", "Non puoi modificare il tuo stesso ruolo.");
+      return;
+    }
+    const newRole = member.role === 'STAFF' ? 'MANAGER' : 'STAFF';
+    const actionText = newRole === 'MANAGER' ? 'promuovere' : 'declassare';
+    Alert.alert("Modifica Ruolo", `Vuoi ${actionText} a ${newRole}?`, [
+      { text: "Annulla", style: "cancel" },
+      {
+        text: "Conferma", onPress: async () => {
+          await supabase.from('profiles').update({ role: newRole }).eq('id', member.id);
+          fetchStaff();
+        }
+      }
+    ]);
+  };
+
+  const activeStaff = staff.filter(s => s.status === 'approved');
+  const pendingStaff = staff.filter(s => s.status === 'pending');
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Impostazioni</Text>
+        {user?.locale_id && (
+          <Text style={styles.headerSubtitle}>Locale: {localeName}</Text>
+        )}
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.container}>
-          
+
           {/* SEZIONE 1: INFO ACCOUNT CON DATI REALI SUPABASE */}
           <Text style={styles.sectionTitle}>IL TUO ACCOUNT</Text>
           <View style={styles.card}>
@@ -72,34 +139,8 @@ export default function SettingsScreen() {
                 <Ionicons name="person-circle-outline" size={24} color="#0B132B" />
               </View>
               <View style={styles.textContainer}>
-                <Text style={styles.infoLabel}>Nome Utente</Text>
-                {/* Leggiamo il nome dai metadati */}
-                <Text style={styles.infoValue}>{user?.name || 'Utente'}</Text>
-              </View>
-            </View>
-            
-            <View style={styles.separator} />
-
-            <View style={styles.infoRow}>
-              <View style={styles.iconContainer}>
-                <Ionicons name="mail-outline" size={22} color="#0B132B" />
-              </View>
-              <View style={styles.textContainer}>
                 <Text style={styles.infoLabel}>Email</Text>
-                {/* Leggiamo la VERA email associata all'account Supabase */}
                 <Text style={styles.infoValue}>{user?.email || 'Nessuna email'}</Text>
-              </View>
-            </View>
-
-            <View style={styles.separator} />
-
-            <View style={styles.infoRow}>
-              <View style={styles.iconContainer}>
-                <Ionicons name="lock-closed-outline" size={22} color="#0B132B" />
-              </View>
-              <View style={styles.textContainer}>
-                <Text style={styles.infoLabel}>Password</Text>
-                <Text style={styles.infoValue}>••••••••••••</Text>
               </View>
             </View>
 
@@ -111,13 +152,71 @@ export default function SettingsScreen() {
               </View>
               <View style={styles.textContainer}>
                 <Text style={styles.infoLabel}>Ruolo Permessi</Text>
-                <Text style={[styles.infoValue, { fontWeight: 'bold', color: user?.role === 'MANAGER' ? '#0052FF' : '#666' }]}>
-                  {user?.role === 'MANAGER' ? 'GESTORE (Pieno Controllo)' : 'STAFF (Solo Operazioni)'}
+                <Text style={[styles.infoValue, { fontWeight: 'bold', color: user?.role === 'PROPRIETARIO' ? '#D93025' : user?.role === 'MANAGER' ? '#0052FF' : '#666' }]}>
+                  {user?.role === 'PROPRIETARIO' ? 'PROPRIETARIO (Admin)' : user?.role === 'MANAGER' ? 'GESTORE (Pieno Controllo)' : 'STAFF (Solo Operazioni)'}
                 </Text>
               </View>
             </View>
           </View>
-          
+
+          {/* SEZIONE STAFF (SOLO PROPRIETARIO) */}
+          {user?.role === 'PROPRIETARIO' && (
+            <>
+              {pendingStaff.length > 0 && (
+                <>
+                  <Text style={styles.sectionTitle}>RICHIESTE IN SOSPESO</Text>
+                  <View style={styles.card}>
+                    {pendingStaff.map((member, index) => (
+                      <View key={member.id}>
+                        <View style={styles.staffRow}>
+                          <View style={styles.textContainer}>
+                            <Text style={styles.infoValue}>{member.email || member.id}</Text>
+                            <Text style={styles.infoLabel}>Vuole unirsi al locale</Text>
+                          </View>
+                          <View style={{ flexDirection: 'row', gap: 8 }}>
+                            <TouchableOpacity style={styles.btnApprove} onPress={() => handleApprove(member.id)}>
+                              <Text style={{ color: '#FFF', fontSize: 12, fontWeight: 'bold' }}>Approva</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.btnReject} onPress={() => handleReject(member.id)}>
+                              <Text style={{ color: '#D93025', fontSize: 12, fontWeight: 'bold' }}>Rifiuta</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                        {index < pendingStaff.length - 1 && <View style={styles.separator} />}
+                      </View>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              <Text style={styles.sectionTitle}>STAFF ATTIVO</Text>
+              <View style={styles.card}>
+                {isLoadingStaff ? (
+                  <ActivityIndicator style={{ padding: 20 }} />
+                ) : activeStaff.length === 0 ? (
+                  <Text style={{ padding: 20, color: '#666', textAlign: 'center' }}>Nessun membro attivo.</Text>
+                ) : (
+                  activeStaff.map((member, index) => (
+                    <View key={member.id}>
+                      <TouchableOpacity style={styles.staffRow} onPress={() => handleChangeRole(member)}>
+                        <View style={styles.textContainer}>
+                          <Text style={styles.infoValue}>{member.email || member.id} {member.id === user.id && '(Tu)'}</Text>
+                          <Text style={[styles.infoLabel, { color: member.role === 'PROPRIETARIO' ? '#D93025' : member.role === 'MANAGER' ? '#0052FF' : '#888' }]}>
+                            {member.role}
+                          </Text>
+                        </View>
+                        {member.id !== user.id && (
+                          <Ionicons name="create-outline" size={20} color="#0052FF" />
+                        )}
+                      </TouchableOpacity>
+                      {index < activeStaff.length - 1 && <View style={styles.separator} />}
+                    </View>
+                  ))
+                )}
+              </View>
+            </>
+          )}
+
           {/* SEZIONE 2: SWITCH MODALITÀ AVANZATA */}
           <View style={[styles.card, styles.toggleCard]}>
             <View style={{ flex: 1, marginRight: 8 }}>
@@ -133,7 +232,7 @@ export default function SettingsScreen() {
             />
           </View>
 
-          {/* CASSELLA FUNZIONALITÀ ADVANCED (APPARIZIONE DINAMICA) */}
+          {/* CASSELLA FUNZIONALITÀ ADVANCED */}
           {isDebugOpen && (
             <View style={styles.advancedBox}>
               <View style={styles.advancedHeader}>
@@ -164,7 +263,7 @@ export default function SettingsScreen() {
                     <Text style={styles.btnResetText}>Ripristina</Text>
                   </TouchableOpacity>
                 )}
-                
+
                 <TouchableOpacity style={styles.btnSave} onPress={handleSaveKey}>
                   <Ionicons name="save-outline" size={16} color="#FFF" style={{ marginRight: 4 }} />
                   <Text style={styles.btnSaveText}>Salva Chiave</Text>
@@ -189,17 +288,22 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#F8F9FA' },
   header: { padding: 20, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderColor: '#eee' },
   headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#000' },
+  headerSubtitle: { fontSize: 14, color: '#0052FF', marginTop: 4, fontWeight: '600' },
   container: { padding: 16, paddingBottom: 40 },
-  
-  sectionTitle: { fontSize: 12, fontWeight: '700', color: '#8E8E93', letterSpacing: 1, marginBottom: 8, marginLeft: 4 },
+
+  sectionTitle: { fontSize: 12, fontWeight: '700', color: '#8E8E93', letterSpacing: 1, marginBottom: 8, marginLeft: 4, marginTop: 10 },
   card: { backgroundColor: '#FFFFFF', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 4, borderWidth: 1, borderColor: '#EAEAEA', marginBottom: 20 },
-  
+
   infoRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
+  staffRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, justifyContent: 'space-between' },
   iconContainer: { width: 36, justifyContent: 'center', alignItems: 'flex-start' },
   textContainer: { flex: 1 },
   infoLabel: { fontSize: 12, color: '#888', marginBottom: 2 },
-  infoValue: { fontSize: 15, color: '#111' },
+  infoValue: { fontSize: 15, color: '#111', fontWeight: '500' },
   separator: { height: 1, backgroundColor: '#F2F2F7' },
+
+  btnApprove: { backgroundColor: '#0052FF', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6 },
+  btnReject: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#D93025', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6 },
 
   toggleCard: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16 },
   toggleTitle: { fontSize: 16, fontWeight: '600', color: '#111', marginBottom: 2 },
@@ -213,7 +317,7 @@ const styles = StyleSheet.create({
   apiKeyHighlight: { fontWeight: 'bold', color: '#0B132B', backgroundColor: '#F0F2F5', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   inputLabel: { fontSize: 13, fontWeight: '600', color: '#666', marginBottom: 6 },
   input: { backgroundColor: '#F8F9FA', borderWidth: 1, borderColor: '#EAEAEA', borderRadius: 8, padding: 12, fontSize: 14, color: '#111', marginBottom: 16 },
-  
+
   actionsRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
   btnSave: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0052FF', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8 },
   btnSaveText: { color: '#FFF', fontWeight: '600', fontSize: 14 },

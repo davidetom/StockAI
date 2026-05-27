@@ -15,7 +15,7 @@ const ICON_NAMES = [
 
 export default function OrdersScreen() {
   const { user } = useAuth();
-  const isManager = user?.role === 'MANAGER';
+  const isManager = user?.role === 'MANAGER' || user?.role === 'PROPRIETARIO';
 
   const [activeTab, setActiveTab] = useState<'drafts' | 'transit'>('drafts');
   
