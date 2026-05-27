@@ -179,40 +179,39 @@ export default function ChatScreen() {
         )}
       </KeyboardAvoidingView>
 
-      {/* MODALE DI CORREZIONE MULTIPLA */}
       <Modal visible={isEditModalVisible} transparent animationType="slide">
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Correggi Quantità</Text>
-            <ScrollView style={{maxHeight: 300}}>
-              {editOperations.map((op, idx) => (
-                <View key={idx} style={styles.editRow}>
-                  <Text style={styles.editRowText}>{op.productName}</Text>
-                  <View style={styles.stepperContainer}>
-                    <TouchableOpacity style={styles.stepperBtn} onPress={() => {
-                      const updated = [...editOperations];
-                      updated[idx].quantityChange = parseFloat((Number(updated[idx].quantityChange) - 1).toFixed(2));
-                      setEditOperations(updated);
-                    }}><Text style={styles.stepperBtnText}>-</Text></TouchableOpacity>
-                    <TextInput 
-                      style={[styles.stepperValue, { padding: 0, minWidth: 40 }]} 
-                      keyboardType="numbers-and-punctuation"
-                      value={String(op.quantityChange)}
-                      onChangeText={(t) => setEditQty(idx, t)}
-                    />
-                    <TouchableOpacity style={styles.stepperBtn} onPress={() => {
-                      const updated = [...editOperations];
-                      updated[idx].quantityChange = parseFloat((Number(updated[idx].quantityChange) + 1).toFixed(2));
-                      setEditOperations(updated);
-                    }}><Text style={styles.stepperBtnText}>+</Text></TouchableOpacity>
+              <Text style={styles.modalTitle}>Correggi Quantità</Text>
+              <ScrollView style={{maxHeight: 300}}>
+                {editOperations.map((op, idx) => (
+                  <View key={idx} style={styles.editRow}>
+                    <Text style={styles.editRowText}>{op.productName}</Text>
+                    <View style={styles.stepperContainer}>
+                      <TouchableOpacity style={styles.stepperBtn} onPress={() => {
+                        const updated = [...editOperations];
+                        updated[idx].quantityChange = parseFloat((Number(updated[idx].quantityChange) - 1).toFixed(2));
+                        setEditOperations(updated);
+                      }}><Text style={styles.stepperBtnText}>-</Text></TouchableOpacity>
+                      <TextInput 
+                        style={[styles.stepperValue, { padding: 0, minWidth: 40 }]} 
+                        keyboardType="numbers-and-punctuation"
+                        value={String(op.quantityChange)}
+                        onChangeText={(t) => setEditQty(idx, t)}
+                      />
+                      <TouchableOpacity style={styles.stepperBtn} onPress={() => {
+                        const updated = [...editOperations];
+                        updated[idx].quantityChange = parseFloat((Number(updated[idx].quantityChange) + 1).toFixed(2));
+                        setEditOperations(updated);
+                      }}><Text style={styles.stepperBtnText}>+</Text></TouchableOpacity>
+                    </View>
                   </View>
-                </View>
-              ))}
-            </ScrollView>
-            <TouchableOpacity style={[styles.btnPrimary, { width: '100%', marginTop: 24, paddingVertical: 16 }]} onPress={saveCorrections}>
-              <Text style={styles.btnPrimaryText}>Salva Modifiche</Text>
-            </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <TouchableOpacity style={[styles.btnPrimary, { flex: 0, width: '100%', marginTop: 24, paddingVertical: 16 }]} onPress={saveCorrections}>
+                <Text style={styles.btnPrimaryText}>Salva Modifiche</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -252,7 +251,7 @@ const styles = StyleSheet.create({
   btnPrimaryText: { color: '#FFFFFF', fontWeight: '600' },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 100 },
+  modalContent: { backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
   modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 20, color: '#0B132B' },
   editRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, borderBottomWidth: 1, borderBottomColor: '#eee', paddingBottom: 12 },
   editRowText: { fontSize: 16, fontWeight: '500', flex: 1 },
