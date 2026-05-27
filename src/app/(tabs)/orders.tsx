@@ -4,6 +4,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Linking, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../../auth';
 import { scanDeliveryNote } from '../../ai';
 import { addTransitOrder, completeTransitOrder, completeTransitOrderWithScan, getDraftOrders, getProducts, getTransitOrders } from '../../db';
@@ -22,6 +23,8 @@ export default function OrdersScreen() {
   const [transitOrders, setTransitOrders] = useState<any[]>([]);
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [supplierChannels, setSupplierChannels] = useState<Record<string, string>>({});
+  const [supplierPhones, setSupplierPhones] = useState<Record<string, string>>({});
   
   const [activeOrder, setActiveOrder] = useState<any>(null);
   const [isEditModalVisible, setEditModalVisible] = useState(false);
@@ -44,6 +47,19 @@ export default function OrdersScreen() {
     setDraftOrders(drafts);
     setTransitOrders(transit);
     setAllProducts(products);
+    
+    try {
+      const channelsData = await AsyncStorage.getItem('@supplier_channels');
+      if (channelsData) {
+        setSupplierChannels(JSON.parse(channelsData));
+      }
+      const phonesData = await AsyncStorage.getItem('@supplier_phones');
+      if (phonesData) {
+        setSupplierPhones(JSON.parse(phonesData));
+      }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const showToast = (msg: string) => {
@@ -54,7 +70,7 @@ export default function OrdersScreen() {
   const generateOrderText = (order: any) => {
     let text = `Buongiorno, *${order.supplierName}*.\n\nDi seguito il nostro ordine ${order.id}:\n\n`;
     order.items.forEach((item: any) => {
-      text += `- ${item.name} — *${item.orderQuantity} ${item.unit}*\n`;
+      text += `- ${item.name} — *${parseFloat(Number(item.orderQuantity).toFixed(2))} ${item.unit}*\n`;
     });
     text += `\nGrazie,\nIl Gestore`;
     return text;
@@ -66,11 +82,30 @@ export default function OrdersScreen() {
     showToast("✅ Copiato negli appunti");
   };
 
-  const handleSendWhatsApp = async (order: any) => {
+  const handleSendOrder = async (order: any) => {
+    const channel = supplierChannels[order.supplierName] || 'WhatsApp';
     const text = encodeURIComponent(generateOrderText(order));
-    Linking.openURL(`whatsapp://send?text=${text}`).catch(() => {
-      showToast("❌ WhatsApp non installato.");
-    });
+
+    let url = '';
+    if (channel === 'WhatsApp') {
+      url = `whatsapp://send?text=${text}`;
+    } else if (channel === 'Email') {
+      url = `mailto:?subject=Ordine%20StockAI&body=${text}`;
+    } else if (channel === 'Telefono') {
+      await Clipboard.setStringAsync(generateOrderText(order));
+      showToast("✅ Testo ordine copiato negli appunti!");
+      const phone = supplierPhones[order.supplierName] || '';
+      url = `tel:${phone}`;
+    } else {
+      await Clipboard.setStringAsync(generateOrderText(order));
+      showToast("✅ Testo ordine copiato negli appunti!");
+    }
+
+    if (url) {
+        Linking.openURL(url).catch(() => {
+          showToast(`❌ Impossibile aprire ${channel}.`);
+        });
+    }
     
     await addTransitOrder(order);
     await loadData();
@@ -207,7 +242,7 @@ export default function OrdersScreen() {
         {item.items.slice(0, 3).map((prod: any, idx: number) => (
           <View key={idx} style={styles.previewRow}>
             <Text style={styles.previewName}>{prod.name}</Text>
-            <Text style={styles.previewQty}>x{prod.orderQuantity} {prod.unit}</Text>
+            <Text style={styles.previewQty}>x{parseFloat(Number(prod.orderQuantity).toFixed(2))} {prod.unit}</Text>
           </View>
         ))}
         {item.items.length > 3 && (
@@ -320,10 +355,9 @@ export default function OrdersScreen() {
                     <TextInput 
                       style={[styles.smallInput, { width: 50, textAlign: 'center', marginHorizontal: 4, paddingVertical: 6, fontSize: 16, fontWeight: 'bold', color: '#1E8E3E' }]}
                       keyboardType="numeric"
-                      value={String(item.quantity)}
+                      value={String(parseFloat(Number(item.quantity).toFixed(2)))}
                       onChangeText={(t) => {
-                        // Accetta solo numeri, o campo vuoto temporaneo se cancella
-                        const numericVal = parseInt(t.replace(/[^0-9]/g, ''));
+                        const numericVal = parseFloat(t.replace(',', '.').replace(/[^0-9.-]/g, ''));
                         updateScannedItem(idx, 'quantity', isNaN(numericVal) ? '' : numericVal);
                       }}
                     />
@@ -370,7 +404,7 @@ export default function OrdersScreen() {
                 <View style={styles.editControls}>
                   <View style={styles.stepper}>
                     <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustEditQuantity(idx, -1)}><Text style={styles.stepperText}>-</Text></TouchableOpacity>
-                    <Text style={styles.stepperValue}>{item.orderQuantity}</Text>
+                    <Text style={styles.stepperValue}>{parseFloat(Number(item.orderQuantity).toFixed(2))}</Text>
                     <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustEditQuantity(idx, 1)}><Text style={styles.stepperText}>+</Text></TouchableOpacity>
                   </View>
                   <Text style={styles.editUnit}>{item.unit}</Text>
@@ -421,11 +455,24 @@ export default function OrdersScreen() {
           <ScrollView contentContainerStyle={{padding: 16}}>
             <Text style={styles.sectionLabel}>CANALE DI INVIO</Text>
             <View style={styles.channelBox}>
-              <Ionicons name="logo-whatsapp" size={24} color="#25D366" />
-              <View style={{marginLeft: 12}}>
-                <Text style={{fontWeight: 'bold'}}>WhatsApp</Text>
-                <Text style={{fontSize: 12, color: '#666'}}>Fornitore: {activeOrder?.supplierName}</Text>
-              </View>
+              {(() => {
+                 const ch = activeOrder ? (supplierChannels[activeOrder.supplierName] || 'WhatsApp') : 'WhatsApp';
+                 let iconName = 'logo-whatsapp';
+                 let iconColor = '#25D366';
+                 if (ch === 'Email') { iconName = 'mail'; iconColor = '#D93025'; }
+                 else if (ch === 'Telefono') { iconName = 'call'; iconColor = '#1A73E8'; }
+                 else if (ch !== 'WhatsApp') { iconName = 'chatbubbles'; iconColor = '#666'; }
+                 
+                 return (
+                   <>
+                     <Ionicons name={iconName as any} size={24} color={iconColor} />
+                     <View style={{marginLeft: 12}}>
+                       <Text style={{fontWeight: 'bold'}}>{ch}</Text>
+                       <Text style={{fontSize: 12, color: '#666'}}>Fornitore: {activeOrder?.supplierName}</Text>
+                     </View>
+                   </>
+                 );
+              })()}
             </View>
             <Text style={styles.sectionLabel}>MESSAGGIO</Text>
             <View style={styles.previewTextBox}>
@@ -434,9 +481,18 @@ export default function OrdersScreen() {
           </ScrollView>
           {activeTab === 'drafts' && (
             <View style={styles.modalFooter}>
-              <TouchableOpacity style={[styles.btnDark, { flex: 0, width: '100%', paddingVertical: 16, justifyContent: 'center', flexDirection: 'row'}]} onPress={() => handleSendWhatsApp(activeOrder)}>
-                  <Ionicons name="logo-whatsapp" size={20} color="#FFF" style={{marginRight: 8}} />
-                  <Text style={[styles.btnDarkText, {fontSize: 16}]}>Invia su WhatsApp</Text>
+              <TouchableOpacity style={[styles.btnDark, { flex: 0, width: '100%', paddingVertical: 16, justifyContent: 'center', flexDirection: 'row'}]} onPress={() => handleSendOrder(activeOrder)}>
+                  {(() => {
+                     const ch = activeOrder ? (supplierChannels[activeOrder.supplierName] || 'WhatsApp') : 'WhatsApp';
+                     let iconName = 'logo-whatsapp';
+                     if (ch === 'Email') iconName = 'mail';
+                     else if (ch === 'Telefono') iconName = 'call';
+                     else if (ch !== 'WhatsApp') iconName = 'paper-plane';
+                     return <Ionicons name={iconName as any} size={20} color="#FFF" style={{marginRight: 8}} />;
+                  })()}
+                  <Text style={[styles.btnDarkText, {fontSize: 16}]}>
+                    {activeOrder ? `Invia tramite ${supplierChannels[activeOrder.supplierName] || 'WhatsApp'}` : 'Invia ordine'}
+                  </Text>
               </TouchableOpacity>
             </View>
           )}

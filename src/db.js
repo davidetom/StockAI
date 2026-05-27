@@ -11,6 +11,15 @@ const INITIAL_DATA = [
   { id: '5', name: 'Basilico Fresco', supplier_id: 'Ortofrutta Locale', current_stock: 1, min_threshold: 3, max_threshold: 5, unit: 'kg' },
 ];
 
+export const emptyWarehouse = async () => {
+  try {
+    await AsyncStorage.setItem(DB_KEY, JSON.stringify([]));
+    await AsyncStorage.setItem(TRANSIT_ORDERS_KEY, JSON.stringify([]));
+  } catch (e) {
+    console.error('Errore durante lo svuotamento del magazzino', e);
+  }
+};
+
 export const initDB = async () => {
   try {
     const existingData = await AsyncStorage.getItem(DB_KEY);

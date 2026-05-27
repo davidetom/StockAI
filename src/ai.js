@@ -16,21 +16,22 @@ export const parseInventoryIntent = async (userMessage, currentProducts) => {
     const prompt = `
     Sei l'agente AI di un gestionale HORECA. L'utente ti dirà cosa ha prelevato o aggiunto al magazzino.
     Può menzionare PIÙ prodotti contemporaneamente.
-    Ecco l'inventario attuale: ${JSON.stringify(currentProducts.map(p => ({id: p.id, name: p.name})))}
+    SE l'utente menziona la preparazione di un piatto (es. "ho preparato 2 carbonare"), STIMA le quantità degli ingredienti utilizzati in base all'inventario (es. guanciale, uova, pecorino, pasta) calcolandole per il numero di porzioni. Le quantità DEVONO poter essere NUMERI DECIMALI (es. -0.25 per 250g se l'unità è in kg).
+    Ecco l'inventario attuale: ${JSON.stringify(currentProducts.map(p => ({id: p.id, name: p.name, unit: p.unit})))}
     
     Messaggio dell'utente: "${userMessage}"
     
-    Capisci quali e quanti prodotti sono stati modificati. 
+    Capisci quali e quanti prodotti sono stati modificati. Usa i decimali (con il punto, es. -0.5) se ha senso per l'unità di misura (es. kg, litri).
     Rispondi ESCLUSIVAMENTE con un oggetto JSON valido con questa struttura:
     {
       "operations": [
         {
           "productId": "id_del_prodotto",
           "productName": "Nome esatto del prodotto trovato",
-          "quantityChange": -1 // negativo per prelievi, positivo per aggiunte
+          "quantityChange": -0.25 // numero (anche decimale), negativo per prelievi, positivo per aggiunte
         }
       ],
-      "replyText": "Risposta cortese (es. 'Ricevuto. Procedo con l'aggiornamento.')"
+      "replyText": "Risposta cortese (es. 'Ho scalato gli ingredienti per 2 carbonare: 0.25 kg di guanciale e 0.2 kg di pecorino.')"
     }
     Se un prodotto non è in inventario, ignoralo nelle operations ma menzionalo in replyText. Se l'intento non è chiaro, operations deve essere [].
     NON INCLUDERE TESTO FUORI DAL JSON.

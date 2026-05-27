@@ -103,16 +103,21 @@ export default function ChatScreen() {
     setIsEditModalVisible(true);
   };
 
-  const adjustEditQty = (index: number, delta: number) => {
+  const setEditQty = (index: number, val: string) => {
     const updated = [...editOperations];
-    updated[index].quantityChange += delta;
+    const sanitized = val.replace(/[^0-9.,-]/g, '');
+    updated[index].quantityChange = sanitized;
     setEditOperations(updated);
   };
 
   // AGGIUNTA GUARDIA DI SICUREZZA
   const saveCorrections = () => {
     if (!pendingAction) return;
-    setPendingAction({ ...pendingAction, operations: editOperations });
+    const finalOps = editOperations.map(op => ({
+      ...op,
+      quantityChange: parseFloat(String(op.quantityChange).replace(',', '.')) || 0
+    }));
+    setPendingAction({ ...pendingAction, operations: finalOps });
     setIsEditModalVisible(false);
   };
 
@@ -176,17 +181,31 @@ export default function ChatScreen() {
 
       {/* MODALE DI CORREZIONE MULTIPLA */}
       <Modal visible={isEditModalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Correggi Quantità</Text>
             <ScrollView style={{maxHeight: 300}}>
               {editOperations.map((op, idx) => (
                 <View key={idx} style={styles.editRow}>
                   <Text style={styles.editRowText}>{op.productName}</Text>
                   <View style={styles.stepperContainer}>
-                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustEditQty(idx, -1)}><Text style={styles.stepperBtnText}>-</Text></TouchableOpacity>
-                    <Text style={styles.stepperValue}>{op.quantityChange}</Text>
-                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustEditQty(idx, 1)}><Text style={styles.stepperBtnText}>+</Text></TouchableOpacity>
+                    <TouchableOpacity style={styles.stepperBtn} onPress={() => {
+                      const updated = [...editOperations];
+                      updated[idx].quantityChange = parseFloat((Number(updated[idx].quantityChange) - 1).toFixed(2));
+                      setEditOperations(updated);
+                    }}><Text style={styles.stepperBtnText}>-</Text></TouchableOpacity>
+                    <TextInput 
+                      style={[styles.stepperValue, { padding: 0, minWidth: 40 }]} 
+                      keyboardType="numbers-and-punctuation"
+                      value={String(op.quantityChange)}
+                      onChangeText={(t) => setEditQty(idx, t)}
+                    />
+                    <TouchableOpacity style={styles.stepperBtn} onPress={() => {
+                      const updated = [...editOperations];
+                      updated[idx].quantityChange = parseFloat((Number(updated[idx].quantityChange) + 1).toFixed(2));
+                      setEditOperations(updated);
+                    }}><Text style={styles.stepperBtnText}>+</Text></TouchableOpacity>
                   </View>
                 </View>
               ))}
@@ -194,8 +213,9 @@ export default function ChatScreen() {
             <TouchableOpacity style={[styles.btnPrimary, { width: '100%', marginTop: 24, paddingVertical: 16 }]} onPress={saveCorrections}>
               <Text style={styles.btnPrimaryText}>Salva Modifiche</Text>
             </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -232,12 +252,12 @@ const styles = StyleSheet.create({
   btnPrimaryText: { color: '#FFFFFF', fontWeight: '600' },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
+  modalContent: { backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 100 },
   modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 20, color: '#0B132B' },
   editRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, borderBottomWidth: 1, borderBottomColor: '#eee', paddingBottom: 12 },
   editRowText: { fontSize: 16, fontWeight: '500', flex: 1 },
   stepperContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F0F2F5', borderRadius: 8 },
   stepperBtn: { paddingHorizontal: 16, paddingVertical: 8 },
   stepperBtnText: { fontSize: 20, fontWeight: 'bold', color: '#0B132B' },
-  stepperValue: { fontSize: 16, fontWeight: 'bold', width: 30, textAlign: 'center' }
+  stepperValue: { fontSize: 16, fontWeight: 'bold', minWidth: 30, textAlign: 'center' }
 });

@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -7,7 +8,7 @@ import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../../auth';
 import { analyzeInventoryFile, categorizeSingleProduct, generateInventoryTemplate, scanOnboardingReceipt, scanShelfInventory } from '../../ai';
-import { addMultipleProducts, addProduct, deleteProduct, getProducts, updateProductDetails, updateProductSupplier } from '../../db';
+import { addMultipleProducts, addProduct, deleteProduct, emptyWarehouse, getProducts, updateProductDetails, updateProductSupplier } from '../../db';
 
 const ICON_MAP: Record<string, any> = {
   'baby-care': require('../../../assets/icons/baby-care.png'),
@@ -40,31 +41,42 @@ export default function WarehouseScreen() {
   const [products, setProducts] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isUpdatingCategories, setIsUpdatingCategories] = useState(false);
-  
+
   // Stati Onboarding & Faldoni
   const [isGeneratingTemplate, setIsGeneratingTemplate] = useState(false);
   const [customIndustry, setCustomIndustry] = useState('');
   const [isOnboardingScanVisible, setIsOnboardingScanVisible] = useState(false);
   const [isScanningReceipt, setIsScanningReceipt] = useState(false);
   const [onboardingScannedItems, setOnboardingScannedItems] = useState<any[]>([]);
-  
+
   // Stati UI standard
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'products' | 'suppliers'>('products');
   const [isEditMode, setIsEditMode] = useState(false);
-  
+
   const [selectedSupplierFilter, setSelectedSupplierFilter] = useState<string | null>(null);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(null);
 
   const [isAddModalVisible, setIsAddModalVisible] = useState(false);
   const [isSupplierModalVisible, setIsSupplierModalVisible] = useState(false);
   const [isEditProductModalVisible, setIsEditProductModalVisible] = useState(false);
-  
+
   const [activeProductId, setActiveProductId] = useState<string | null>(null);
   const [newSupplierName, setNewSupplierName] = useState('');
+  const [newSupplierChannel, setNewSupplierChannel] = useState('WhatsApp');
+  const [newSupplierPhone, setNewSupplierPhone] = useState('');
 
-  const [newProd, setNewProd] = useState({ name: '', min: '', max: '', unit: 'pz.', supplier: '', isNewSupplier: false, commChannel: 'WhatsApp' });
+  const [newProd, setNewProd] = useState({ name: '', min: '', max: '', unit: 'pz.', supplier: '', isNewSupplier: false, commChannel: 'WhatsApp', phone: '' });
   const [editProdData, setEditProdData] = useState({ id: '', name: '', min: '', max: '', unit: '' });
+
+  // Stato per canali di trasmissione
+  const [supplierChannels, setSupplierChannels] = useState<Record<string, string>>({});
+  const [supplierPhones, setSupplierPhones] = useState<Record<string, string>>({});
+  const [isChannelModalVisible, setIsChannelModalVisible] = useState(false);
+  const [activeSupplierForChannel, setActiveSupplierForChannel] = useState('');
+  const [modalChannel, setModalChannel] = useState('');
+  const [modalPhone, setModalPhone] = useState('');
+  const AVAILABLE_CHANNELS = ['WhatsApp', 'Email', 'Telefono', 'App B2B', 'Rappresentante', 'Altro'];
 
   useFocusEffect(
     React.useCallback(() => { loadData(); }, [])
@@ -73,6 +85,40 @@ export default function WarehouseScreen() {
   const loadData = async () => {
     const data = await getProducts();
     setProducts(data);
+
+    try {
+      const channelsData = await AsyncStorage.getItem('@supplier_channels');
+      if (channelsData) {
+        setSupplierChannels(JSON.parse(channelsData));
+      }
+      const phonesData = await AsyncStorage.getItem('@supplier_phones');
+      if (phonesData) {
+        setSupplierPhones(JSON.parse(phonesData));
+      }
+    } catch (e) {
+      console.error('Errore nel caricamento canali', e);
+    }
+  };
+
+  const openChannelModal = (supplierName: string) => {
+    setActiveSupplierForChannel(supplierName);
+    setModalChannel(supplierChannels[supplierName] || 'WhatsApp');
+    setModalPhone(supplierPhones[supplierName] || '');
+    setIsChannelModalVisible(true);
+  };
+
+  const handleSaveChannel = async () => {
+    const updatedChannels = { ...supplierChannels, [activeSupplierForChannel]: modalChannel };
+    setSupplierChannels(updatedChannels);
+    await AsyncStorage.setItem('@supplier_channels', JSON.stringify(updatedChannels));
+
+    if (modalChannel === 'Telefono') {
+      const updatedPhones = { ...supplierPhones, [activeSupplierForChannel]: modalPhone };
+      setSupplierPhones(updatedPhones);
+      await AsyncStorage.setItem('@supplier_phones', JSON.stringify(updatedPhones));
+    }
+
+    setIsChannelModalVisible(false);
   };
 
   // --- LOGICA SVUOTA FALDONI (SCAN MULTIPLO) ---
@@ -88,7 +134,7 @@ export default function WarehouseScreen() {
     if (!result.canceled && result.assets[0].base64) {
       setIsScanningReceipt(true);
       const availableIconNames = Object.keys(ICON_MAP);
-      
+
       const aiResult = await scanOnboardingReceipt(
         result.assets[0].base64,
         result.assets[0].mimeType || 'image/jpeg',
@@ -107,7 +153,7 @@ export default function WarehouseScreen() {
           supplier_id: aiResult.supplierName || 'Fornitore Generico',
           current_stock: Number(item.quantity) || 0,
         }));
-        
+
         setOnboardingScannedItems(prev => [...prev, ...newItems]);
       } else {
         Alert.alert("Errore IA", "Non sono riuscito a leggere bene la ricevuta, riprova scattando con più luce.");
@@ -124,13 +170,13 @@ export default function WarehouseScreen() {
 
   const updateScannedItemQty = (index: number, newQty: string) => {
     const updated = [...onboardingScannedItems];
-    updated[index].current_stock = parseInt(newQty.replace(/[^0-9]/g, '')) || 0;
+    updated[index].current_stock = parseFloat(newQty.replace(',', '.').replace(/[^0-9.-]/g, '')) || 0;
     setOnboardingScannedItems(updated);
   };
 
-  const updateScannedItemValue = (index: number, field: 'min_threshold' | 'max_threshold', newValue: string) => {
+  const updateScannedItemValue = (index: number, field: string, newValue: string) => {
     const updated = [...onboardingScannedItems];
-    updated[index][field] = parseInt(newValue.replace(/[^0-9]/g, '')) || 0;
+    updated[index][field] = parseFloat(newValue.replace(',', '.').replace(/[^0-9.-]/g, '')) || 0;
     setOnboardingScannedItems(updated);
   };
 
@@ -139,7 +185,7 @@ export default function WarehouseScreen() {
       setIsOnboardingScanVisible(false);
       return;
     }
-    
+
     setIsUpdatingCategories(true);
     await addMultipleProducts(onboardingScannedItems);
     setOnboardingScannedItems([]);
@@ -152,24 +198,24 @@ export default function WarehouseScreen() {
   // --- LOGICA CARICAMENTO FILE (PDF/CSV/TXT) ---
   const handlePickFile = async () => {
     try {
-      const result = await DocumentPicker.getDocumentAsync({ 
+      const result = await DocumentPicker.getDocumentAsync({
         // Accettiamo PDF, CSV, TXT e formati Excel (sebbene per Excel sia sempre meglio consigliare il PDF)
         type: ['application/pdf', 'text/csv', 'text/plain', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'],
-        copyToCacheDirectory: true 
+        copyToCacheDirectory: true
       });
-      
+
       if (!result.canceled && result.assets[0]) {
         setIsGeneratingTemplate(true); // Usiamo lo stesso overlay di caricamento
-        
+
         const fileUri = result.assets[0].uri;
         let mimeType = result.assets[0].mimeType || 'text/plain';
-        
+
         // Leggiamo il file convertendolo in stringa Base64
         const base64File = await FileSystem.readAsStringAsync(fileUri, { encoding: 'base64' });
-        
+
         const availableIconNames = Object.keys(ICON_MAP);
         const aiProducts = await analyzeInventoryFile(base64File, mimeType, customIndustry || "Generico", availableIconNames);
-        
+
         if (aiProducts && aiProducts.length > 0) {
           await addMultipleProducts(aiProducts);
           await loadData();
@@ -179,7 +225,7 @@ export default function WarehouseScreen() {
         }
         setIsGeneratingTemplate(false);
       }
-    } catch (err) { 
+    } catch (err) {
       console.error(err);
       setIsGeneratingTemplate(false);
     }
@@ -195,7 +241,7 @@ export default function WarehouseScreen() {
     if (!result.canceled && result.assets[0].base64) {
       setIsGeneratingTemplate(true); // Mostriamo il caricamento a tutto schermo
       const availableIconNames = Object.keys(ICON_MAP);
-      
+
       const aiResult = await scanShelfInventory(
         result.assets[0].base64,
         result.assets[0].mimeType || 'image/jpeg',
@@ -214,10 +260,10 @@ export default function WarehouseScreen() {
           supplier_id: 'Fornitore Generico', // Campo default da modificare dopo
           current_stock: Number(item.quantity) || 0,
         }));
-        
+
         // Aggiungiamo i prodotti alla lista temporanea e apriamo il modale di revisione!
         setOnboardingScannedItems(prev => [...prev, ...newItems]);
-        setIsOnboardingScanVisible(true); 
+        setIsOnboardingScanVisible(true);
       } else {
         Alert.alert("Errore IA o indisponibilità", "Non sono riuscito a riconoscere i prodotti in questa foto, o il server è momentaneamente sovraccarico. Riprova fra poco.");
       }
@@ -227,15 +273,15 @@ export default function WarehouseScreen() {
 
   // --- LOGICA TEMPLATE STANDARD ---
   const handleGenerateTemplate = async (industryType: string) => {
-    Keyboard.dismiss(); 
+    Keyboard.dismiss();
     if (!industryType.trim()) {
       Alert.alert("Errore", "Inserisci una descrizione valida.");
       return;
     }
-    
+
     setIsGeneratingTemplate(true);
     const aiProducts = await generateInventoryTemplate(industryType, Object.keys(ICON_MAP));
-    
+
     if (aiProducts && aiProducts.length > 0) {
       await addMultipleProducts(aiProducts);
       setCustomIndustry('');
@@ -269,30 +315,31 @@ export default function WarehouseScreen() {
 
   const handleMenuAction = (action: 'edit' | 'suppliers' | 'products') => {
     setIsMenuOpen(false);
-    if (action === 'edit') { 
-      setIsEditMode(!isEditMode); 
-      setViewMode('products'); 
-      setSelectedSupplierFilter(null); 
-    } else if (action === 'suppliers') { 
-      setIsEditMode(false); 
-      setViewMode('suppliers'); 
-      setSelectedSupplierFilter(null); 
-    } else { 
-      setIsEditMode(false); 
-      setViewMode('products'); 
-      setSelectedSupplierFilter(null); 
+    if (action === 'edit') {
+      setIsEditMode(!isEditMode);
+      setViewMode('products');
+      setSelectedSupplierFilter(null);
+    } else if (action === 'suppliers') {
+      setIsEditMode(false);
+      setViewMode('suppliers');
+      setSelectedSupplierFilter(null);
+    } else {
+      setIsEditMode(false);
+      setViewMode('products');
+      setSelectedSupplierFilter(null);
     }
   };
 
   const confirmDelete = (item: any) => {
     Alert.alert("Elimina", `Vuoi davvero eliminare ${item.name}?`, [
-        { text: "Annulla", style: "cancel" },
-        { text: "Conferma", style: "destructive", onPress: async () => { 
-            await deleteProduct(item.id); 
-            await loadData(); 
-          } 
+      { text: "Annulla", style: "cancel" },
+      {
+        text: "Conferma", style: "destructive", onPress: async () => {
+          await deleteProduct(item.id);
+          await loadData();
         }
-      ]);
+      }
+    ]);
   };
 
   // --- FUNZIONE TEMPORANEA DI TEST PER RESETTARE IL DB ---
@@ -302,65 +349,85 @@ export default function WarehouseScreen() {
       "Vuoi davvero eliminare TUTTI i prodotti presenti nel magazzino per ricominciare il test da zero?",
       [
         { text: "Annulla", style: "cancel" },
-        { 
-          text: "Svuota Tutto", 
-          style: "destructive", 
+        {
+          text: "Svuota Tutto",
+          style: "destructive",
           onPress: async () => {
             setIsGeneratingTemplate(true); // Attiva la rotellina di caricamento
-            // Esegue un ciclo eliminando i prodotti uno alla volta
-            for (const p of products) {
-              await deleteProduct(p.id);
-            }
+            await emptyWarehouse();
             await loadData(); // Ricarica il magazzino (ora vuoto)
             setIsGeneratingTemplate(false);
-          } 
+          }
         }
       ]
     );
   };
 
   const handleSaveNewProduct = async () => {
-    Keyboard.dismiss(); 
+    Keyboard.dismiss();
     if (!newProd.name || !newProd.min || !newProd.max || !newProd.supplier) {
       Alert.alert("Errore", "Compila tutti i campi obbligatori.");
       return;
     }
 
+    if (newProd.isNewSupplier && newProd.commChannel) {
+      const updatedChannels = { ...supplierChannels, [newProd.supplier]: newProd.commChannel };
+      setSupplierChannels(updatedChannels);
+      await AsyncStorage.setItem('@supplier_channels', JSON.stringify(updatedChannels));
+
+      if (newProd.commChannel === 'Telefono') {
+        const updatedPhones = { ...supplierPhones, [newProd.supplier]: newProd.phone };
+        setSupplierPhones(updatedPhones);
+        await AsyncStorage.setItem('@supplier_phones', JSON.stringify(updatedPhones));
+      }
+    }
+
     setIsUpdatingCategories(true);
     const aiClassification = await categorizeSingleProduct(newProd.name, uniqueCategories, Object.keys(ICON_MAP));
-    
+
     await addProduct({
-      name: newProd.name, 
-      min_threshold: parseInt(newProd.min), 
-      max_threshold: parseInt(newProd.max), 
-      unit: newProd.unit, 
-      supplier_id: newProd.supplier, 
-      category: aiClassification?.category || undefined, 
+      name: newProd.name,
+      min_threshold: parseFloat(newProd.min.replace(',', '.')),
+      max_threshold: parseFloat(newProd.max.replace(',', '.')),
+      unit: newProd.unit,
+      supplier_id: newProd.supplier,
+      category: aiClassification?.category || undefined,
       icon: aiClassification?.icon || undefined
     });
 
     setIsAddModalVisible(false);
-    setNewProd({ name: '', min: '', max: '', unit: 'pz.', supplier: '', isNewSupplier: false, commChannel: 'WhatsApp' });
-    await loadData(); 
+    setNewProd({ name: '', min: '', max: '', unit: 'pz.', supplier: '', isNewSupplier: false, commChannel: 'WhatsApp', phone: '' });
+    await loadData();
     setIsUpdatingCategories(false);
   };
 
   const handleUpdateSupplier = async () => {
     Keyboard.dismiss();
-    if (activeProductId && newSupplierName) { 
-      await updateProductSupplier(activeProductId, newSupplierName); 
-      setIsSupplierModalVisible(false); 
-      loadData(); 
+    if (activeProductId && newSupplierName) {
+      await updateProductSupplier(activeProductId, newSupplierName);
+
+      const updatedChannels = { ...supplierChannels, [newSupplierName]: newSupplierChannel };
+      setSupplierChannels(updatedChannels);
+      await AsyncStorage.setItem('@supplier_channels', JSON.stringify(updatedChannels));
+
+      if (newSupplierChannel === 'Telefono') {
+        const updatedPhones = { ...supplierPhones, [newSupplierName]: newSupplierPhone };
+        setSupplierPhones(updatedPhones);
+        await AsyncStorage.setItem('@supplier_phones', JSON.stringify(updatedPhones));
+      }
+
+      setIsSupplierModalVisible(false);
+      loadData();
     }
   };
 
   const openEditProduct = (item: any) => {
-    setEditProdData({ 
-      id: item.id, 
-      name: item.name, 
-      min: String(item.min_threshold), 
-      max: String(item.max_threshold), 
-      unit: item.unit 
+    setEditProdData({
+      id: item.id,
+      name: item.name,
+      min: String(item.min_threshold),
+      max: String(item.max_threshold),
+      unit: item.unit
     });
     setIsEditProductModalVisible(true);
   };
@@ -371,14 +438,14 @@ export default function WarehouseScreen() {
       Alert.alert("Errore", "Compila tutti i campi.");
       return;
     }
-    
-    await updateProductDetails(editProdData.id, { 
-      name: editProdData.name, 
-      min_threshold: parseInt(editProdData.min), 
-      max_threshold: parseInt(editProdData.max), 
-      unit: editProdData.unit 
+
+    await updateProductDetails(editProdData.id, {
+      name: editProdData.name,
+      min_threshold: parseFloat(editProdData.min.replace(',', '.')),
+      max_threshold: parseFloat(editProdData.max.replace(',', '.')),
+      unit: editProdData.unit
     });
-    
+
     setIsEditProductModalVisible(false);
     loadData();
   };
@@ -392,10 +459,10 @@ export default function WarehouseScreen() {
     return (
       <View style={styles.card}>
         <View style={styles.imagePlaceholder}>
-          {item.icon && ICON_MAP[item.icon] ? ( 
-            <Image source={ICON_MAP[item.icon]} style={{ width: 32, height: 32 }} resizeMode="contain" /> 
-          ) : ( 
-            <Ionicons name="image-outline" size={24} color="#B0B0B0" /> 
+          {item.icon && ICON_MAP[item.icon] ? (
+            <Image source={ICON_MAP[item.icon]} style={{ width: 32, height: 32 }} resizeMode="contain" />
+          ) : (
+            <Ionicons name="image-outline" size={24} color="#B0B0B0" />
           )}
         </View>
         <View style={styles.infoContainer}>
@@ -407,7 +474,7 @@ export default function WarehouseScreen() {
             <TouchableOpacity style={styles.actionBtnEdit} onPress={() => openEditProduct(item)}>
               <Ionicons name="pencil-outline" size={20} color="#333" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionBtnTruck} onPress={() => { setActiveProductId(item.id); setNewSupplierName(item.supplier_id); setIsSupplierModalVisible(true); }}>
+            <TouchableOpacity style={styles.actionBtnTruck} onPress={() => { setActiveProductId(item.id); setNewSupplierName(item.supplier_id); setNewSupplierChannel(supplierChannels[item.supplier_id] || 'WhatsApp'); setNewSupplierPhone(supplierPhones[item.supplier_id] || ''); setIsSupplierModalVisible(true); }}>
               <Ionicons name="bus-outline" size={20} color="#0052FF" />
             </TouchableOpacity>
             <TouchableOpacity style={styles.actionBtnTrash} onPress={() => confirmDelete(item)}>
@@ -417,28 +484,37 @@ export default function WarehouseScreen() {
         ) : (
           <View style={[styles.badge, { backgroundColor: statusConfig.bg }]}>
             <View style={styles.badgeHeader}>
-              <Ionicons name={statusConfig.icon as any} size={12} color={statusConfig.text} style={{marginRight: 4}} />
+              <Ionicons name={statusConfig.icon as any} size={12} color={statusConfig.text} style={{ marginRight: 4 }} />
               <Text style={[styles.badgeLabel, { color: statusConfig.text }]}>{statusConfig.label}</Text>
             </View>
-            <Text style={[styles.badgeQuantity, { color: statusConfig.text }]}>{item.current_stock} {item.unit}</Text>
+            <Text style={[styles.badgeQuantity, { color: statusConfig.text }]}>{parseFloat(Number(item.current_stock).toFixed(2))} {item.unit}</Text>
           </View>
         )}
       </View>
     );
   };
 
-  const renderSupplierItem = ({ item }: { item: any }) => (
-    <TouchableOpacity style={styles.card} onPress={() => { setSelectedSupplierFilter(item.name); setViewMode('products'); }}>
-      <View style={[styles.imagePlaceholder, { backgroundColor: '#E8F0FE' }]}>
-        <Ionicons name="business-outline" size={24} color="#1A73E8" />
-      </View>
-      <View style={styles.infoContainer}>
-        <Text style={styles.productName}>{item.name}</Text>
-        <Text style={styles.supplierText}>{item.count} prodotti associati</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={20} color="#CCC" />
-    </TouchableOpacity>
-  );
+  const renderSupplierItem = ({ item }: { item: any }) => {
+    const channel = supplierChannels[item.name] || 'WhatsApp';
+    return (
+      <TouchableOpacity style={styles.card} onPress={() => { setSelectedSupplierFilter(item.name); setViewMode('products'); }}>
+        <View style={[styles.imagePlaceholder, { backgroundColor: '#E8F0FE' }]}>
+          <Ionicons name="business-outline" size={24} color="#1A73E8" />
+        </View>
+        <View style={styles.infoContainer}>
+          <Text style={styles.productName}>{item.name}</Text>
+          <Text style={styles.supplierText}>{item.count} prodotti associati</Text>
+        </View>
+        <TouchableOpacity
+          style={{ padding: 8, backgroundColor: '#F0F4FF', borderRadius: 8, flexDirection: 'row', alignItems: 'center' }}
+          onPress={(e) => { e.stopPropagation(); openChannelModal(item.name); }}
+        >
+          <Ionicons name={channel === 'WhatsApp' ? "logo-whatsapp" : channel === 'Email' ? "mail-outline" : channel === 'Telefono' ? "call-outline" : "chatbubbles-outline"} size={16} color="#0052FF" style={{ marginRight: 4 }} />
+          <Text style={{ color: '#0052FF', fontSize: 12, fontWeight: 'bold' }}>{channel}</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -447,33 +523,33 @@ export default function WarehouseScreen() {
           <TouchableOpacity onPress={() => isManager && setIsMenuOpen(!isMenuOpen)} disabled={!isManager}>
             <Ionicons name="menu-outline" size={28} color={isManager ? "#000" : "#CCC"} />
           </TouchableOpacity>
-          
+
           <Text style={styles.headerTitle}>{viewMode === 'suppliers' ? 'Fornitori' : 'Magazzino'}</Text>
-          
+
           {/* Sostituito il logout con un placeholder invisibile per tenere il titolo centrato */}
           <View style={{ width: 28 }} />
         </View>
-        
+
         {isMenuOpen && isManager && (
           <View style={styles.dropdownMenu}>
             <TouchableOpacity style={styles.dropdownItem} onPress={() => handleMenuAction(isEditMode ? 'products' : 'edit')}>
-              <Ionicons name={isEditMode ? "checkmark-circle-outline" : "create-outline"} size={20} color="#000" style={{marginRight: 8}} />
+              <Ionicons name={isEditMode ? "checkmark-circle-outline" : "create-outline"} size={20} color="#000" style={{ marginRight: 8 }} />
               <Text style={styles.dropdownText}>{isEditMode ? "Fine Modifica" : "Modifica Magazzino"}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.dropdownItem} onPress={() => handleMenuAction('suppliers')}>
-              <Ionicons name="business-outline" size={20} color="#000" style={{marginRight: 8}} />
+              <Ionicons name="business-outline" size={20} color="#000" style={{ marginRight: 8 }} />
               <Text style={styles.dropdownText}>Visualizza Fornitori</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.dropdownItem, { borderBottomWidth: 0 }]} onPress={() => handleMenuAction('products')}>
-              <Ionicons name="cube-outline" size={20} color="#000" style={{marginRight: 8}} />
+              <Ionicons name="cube-outline" size={20} color="#000" style={{ marginRight: 8 }} />
               <Text style={styles.dropdownText}>Tutti i Prodotti</Text>
             </TouchableOpacity>
             {/* --- INIZIO OPZIONE TEMPORANEA DI TEST --- */}
-            <TouchableOpacity 
-              style={[styles.dropdownItem, { borderBottomWidth: 0, borderTopWidth: 1, borderColor: '#FCE8E6' }]} 
+            <TouchableOpacity
+              style={[styles.dropdownItem, { borderBottomWidth: 0, borderTopWidth: 1, borderColor: '#FCE8E6' }]}
               onPress={() => { setIsMenuOpen(false); handleClearWarehouse(); }}
             >
-              <Ionicons name="trash-bin-outline" size={20} color="#D93025" style={{marginRight: 8}} />
+              <Ionicons name="trash-bin-outline" size={20} color="#D93025" style={{ marginRight: 8 }} />
               <Text style={[styles.dropdownText, { color: '#D93025', fontWeight: 'bold' }]}>DANGER: Svuota Magazzino</Text>
             </TouchableOpacity>
             {/* --- FINE OPZIONE TEMPORANEA DI TEST --- */}
@@ -483,8 +559,8 @@ export default function WarehouseScreen() {
 
       {(isGeneratingTemplate || isUpdatingCategories) && (
         <View style={styles.fullScreenLoader}>
-           <ActivityIndicator size="large" color="#FFF" />
-           <Text style={{color: '#FFF', marginTop: 12, fontWeight: 'bold', fontSize: 16}}>Elaborazione in corso...</Text>
+          <ActivityIndicator size="large" color="#FFF" />
+          <Text style={{ color: '#FFF', marginTop: 12, fontWeight: 'bold', fontSize: 16 }}>Elaborazione in corso...</Text>
         </View>
       )}
 
@@ -496,25 +572,25 @@ export default function WarehouseScreen() {
               <Ionicons name={isManager ? "sparkles" : "cube-outline"} size={48} color="#0052FF" />
             </View>
             <Text style={styles.emptyTitle}>Il tuo Magazzino è vuoto!</Text>
-            
+
             {isManager ? (
               <>
                 {/* 1. CASELLA DI TESTO (Ora in alto) */}
                 <Text style={styles.emptySubtitle}>
                   Inizializza il magazzino con l'IA. Inserisci una descrizione del tuo locale:
                 </Text>
-                
+
                 <View style={styles.customInputContainer}>
-                  <TextInput 
-                    style={styles.customInput} 
-                    placeholder="Es. Hamburgheria, Pub Irlandese..." 
-                    placeholderTextColor="#999" 
-                    value={customIndustry} 
-                    onChangeText={setCustomIndustry} 
+                  <TextInput
+                    style={styles.customInput}
+                    placeholder="Es. Hamburgheria, Pub Irlandese..."
+                    placeholderTextColor="#999"
+                    value={customIndustry}
+                    onChangeText={setCustomIndustry}
                   />
                   <TouchableOpacity style={styles.btnCustomGenerate} onPress={() => handleGenerateTemplate(customIndustry)}>
-                     <Ionicons name="flash-outline" size={18} color="#FFF" style={{marginRight: 6}} />
-                     <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 15}}>Genera Catalogo</Text>
+                    <Ionicons name="flash-outline" size={18} color="#FFF" style={{ marginRight: 6 }} />
+                    <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 15 }}>Genera Catalogo</Text>
                   </TouchableOpacity>
                 </View>
 
@@ -522,29 +598,29 @@ export default function WarehouseScreen() {
                 <View style={styles.dividerContainer}>
                   <View style={styles.dividerLine} /><Text style={styles.dividerText}>OPPURE</Text><View style={styles.dividerLine} />
                 </View>
-                
+
                 {/* BOTTONI FOTO E FILE (Riga superiore) */}
-                <View style={{flexDirection: 'row', gap: 12, width: '100%', marginBottom: 12}}>
-                  <TouchableOpacity style={[styles.btnFaldoni, {flex: 1, paddingHorizontal: 12}]} onPress={() => setIsOnboardingScanVisible(true)}>
-                    <Ionicons name="document-text-outline" size={20} color="#FFF" style={{marginRight: 6}} />
-                    <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 13}}>Fotografa fatture</Text>
+                <View style={{ flexDirection: 'row', gap: 12, width: '100%', marginBottom: 12 }}>
+                  <TouchableOpacity style={[styles.btnFaldoni, { flex: 1, paddingHorizontal: 12 }]} onPress={() => setIsOnboardingScanVisible(true)}>
+                    <Ionicons name="document-text-outline" size={20} color="#FFF" style={{ marginRight: 6 }} />
+                    <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 13 }}>Fotografa fatture</Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity style={[styles.btnFaldoni, {flex: 1, paddingHorizontal: 12, backgroundColor: '#0052FF'}]} onPress={handlePickFile}>
-                    <Ionicons name="document-attach-outline" size={20} color="#FFF" style={{marginRight: 6}} />
-                    <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 13}}>Carica (PDF/CSV)</Text>
+                  <TouchableOpacity style={[styles.btnFaldoni, { flex: 1, paddingHorizontal: 12, backgroundColor: '#0052FF' }]} onPress={handlePickFile}>
+                    <Ionicons name="document-attach-outline" size={20} color="#FFF" style={{ marginRight: 6 }} />
+                    <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 13 }}>Carica (PDF/CSV)</Text>
                   </TouchableOpacity>
                 </View>
 
                 {/* NUOVO BOTTONE SCAFFALI (Centrato in basso) */}
-                <TouchableOpacity style={[styles.btnFaldoni, {backgroundColor: '#1E8E3E', width: '100%'}]} onPress={handleScanShelf}>
-                   <Ionicons name="scan-outline" size={20} color="#FFF" style={{marginRight: 8}} />
-                   <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 16}}>Scansiona scaffali</Text>
+                <TouchableOpacity style={[styles.btnFaldoni, { backgroundColor: '#1E8E3E', width: '100%' }]} onPress={handleScanShelf}>
+                  <Ionicons name="scan-outline" size={20} color="#FFF" style={{ marginRight: 8 }} />
+                  <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16 }}>Scansiona scaffali</Text>
                 </TouchableOpacity>
-                
+
                 {/* TASTO MANUALE (Rimane in fondo) */}
-                <TouchableOpacity style={{marginTop: 32}} onPress={() => setIsAddModalVisible(true)}>
-                   <Text style={{color: '#666', fontWeight: 'bold', fontSize: 15, textDecorationLine: 'underline'}}>Aggiungo manualmente</Text>
+                <TouchableOpacity style={{ marginTop: 32 }} onPress={() => setIsAddModalVisible(true)}>
+                  <Text style={{ color: '#666', fontWeight: 'bold', fontSize: 15, textDecorationLine: 'underline' }}>Aggiungo manualmente</Text>
                 </TouchableOpacity>
               </>
             ) : (
@@ -560,26 +636,26 @@ export default function WarehouseScreen() {
             <>
               <View style={styles.searchContainer}>
                 <Ionicons name="search-outline" size={20} color="#999" style={styles.searchIcon} />
-                <TextInput 
-                  style={styles.searchInput} 
-                  placeholder="Cerca prodotto..." 
-                  value={searchQuery} 
-                  onChangeText={setSearchQuery} 
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Cerca prodotto..."
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
                 />
-                {selectedSupplierFilter && ( 
+                {selectedSupplierFilter && (
                   <TouchableOpacity onPress={() => setSelectedSupplierFilter(null)} style={styles.clearFilterBadge}>
                     <Text style={styles.clearFilterText}>X Filtro Fornitore</Text>
-                  </TouchableOpacity> 
+                  </TouchableOpacity>
                 )}
               </View>
               <View style={styles.categoriesWrapper}>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesScroll}>
                   <TouchableOpacity style={[styles.categoryChip, !selectedCategoryFilter && styles.categoryChipActive]} onPress={() => setSelectedCategoryFilter(null)}>
-                    <Text style={{color: !selectedCategoryFilter ? '#FFF' : '#333'}}>Tutti</Text>
+                    <Text style={{ color: !selectedCategoryFilter ? '#FFF' : '#333' }}>Tutti</Text>
                   </TouchableOpacity>
                   {uniqueCategories.map(cat => (
                     <TouchableOpacity key={cat} style={[styles.categoryChip, selectedCategoryFilter === cat && styles.categoryChipActive]} onPress={() => setSelectedCategoryFilter(cat)}>
-                      <Text style={{color: selectedCategoryFilter === cat ? '#FFF' : '#333'}}>{cat}</Text>
+                      <Text style={{ color: selectedCategoryFilter === cat ? '#FFF' : '#333' }}>{cat}</Text>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
@@ -589,7 +665,7 @@ export default function WarehouseScreen() {
 
           {isEditMode && (
             <TouchableOpacity style={styles.addBtn} onPress={() => setIsAddModalVisible(true)}>
-              <Ionicons name="add-circle-outline" size={24} color="#0052FF" style={{marginRight: 8}} />
+              <Ionicons name="add-circle-outline" size={24} color="#0052FF" style={{ marginRight: 8 }} />
               <Text style={styles.addBtnText}>Aggiungi Nuovo Prodotto</Text>
             </TouchableOpacity>
           )}
@@ -612,55 +688,55 @@ export default function WarehouseScreen() {
               <Ionicons name="close" size={28} color="#000" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Prodotti Scansionati</Text>
-            <View style={{width: 28}}/>
+            <View style={{ width: 28 }} />
           </View>
-          
-          <ScrollView contentContainerStyle={{padding: 16}}>
+
+          <ScrollView contentContainerStyle={{ padding: 16 }}>
             {onboardingScannedItems.length === 0 ? (
-              <View style={{alignItems: 'center', marginTop: 40}}>
+              <View style={{ alignItems: 'center', marginTop: 40 }}>
                 <Ionicons name="documents-outline" size={48} color="#CCC" />
-                <Text style={{color: '#666', marginTop: 12, textAlign: 'center'}}>Nessuna fattura scansionata.{'\n'}Inizia a fotografare!</Text>
+                <Text style={{ color: '#666', marginTop: 12, textAlign: 'center' }}>Nessuna fattura scansionata.{'\n'}Inizia a fotografare!</Text>
               </View>
             ) : (
               onboardingScannedItems.map((item, idx) => (
                 <View key={idx} style={styles.scannedItemBox}>
-                  <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
-                    <View style={{flex: 1}}>
-                      <Text style={{fontWeight: 'bold', fontSize: 16}}>{item.name}</Text>
-                      <Text style={{color: '#0052FF', fontSize: 12, marginTop: 4}}>{item.supplier_id} • {item.category}</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontWeight: 'bold', fontSize: 16 }}>{item.name}</Text>
+                      <Text style={{ color: '#0052FF', fontSize: 12, marginTop: 4 }}>{item.supplier_id} • {item.category}</Text>
                     </View>
-                    
-                    <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                      <TextInput 
+
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <TextInput
                         style={[styles.smallInput, { width: 50, textAlign: 'center', marginHorizontal: 4, paddingVertical: 6, fontWeight: 'bold' }]}
-                        keyboardType="numeric" 
-                        value={String(item.current_stock)} 
+                        keyboardType="numeric"
+                        value={String(item.current_stock)}
                         onChangeText={(t) => updateScannedItemQty(idx, t)}
                       />
-                      <Text style={{fontSize: 14, fontWeight: 'bold', marginRight: 12}}>{item.unit}</Text>
+                      <Text style={{ fontSize: 14, fontWeight: 'bold', marginRight: 12 }}>{item.unit}</Text>
                       <TouchableOpacity onPress={() => removeScannedItem(idx)}>
                         <Ionicons name="trash-outline" size={20} color="#D93025" />
                       </TouchableOpacity>
                     </View>
                   </View>
 
-                  <View style={{flexDirection: 'row', gap: 10, marginTop: 8}}>
-                    <View style={{flex: 1}}>
-                      <Text style={{fontSize: 10, color: '#666'}}>Min</Text>
-                      <TextInput 
-                        style={styles.smallInput} 
-                        keyboardType="numeric" 
-                        value={String(item.min_threshold)} 
-                        onChangeText={(t) => updateScannedItemValue(idx, 'min_threshold', t)} 
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 10, color: '#666' }}>Min</Text>
+                      <TextInput
+                        style={styles.smallInput}
+                        keyboardType="numeric"
+                        value={String(item.min_threshold)}
+                        onChangeText={(t) => updateScannedItemValue(idx, 'min_threshold', t)}
                       />
                     </View>
-                    <View style={{flex: 1}}>
-                      <Text style={{fontSize: 10, color: '#666'}}>Max</Text>
-                      <TextInput 
-                        style={styles.smallInput} 
-                        keyboardType="numeric" 
-                        value={String(item.max_threshold)} 
-                        onChangeText={(t) => updateScannedItemValue(idx, 'max_threshold', t)} 
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 10, color: '#666' }}>Max</Text>
+                      <TextInput
+                        style={styles.smallInput}
+                        keyboardType="numeric"
+                        value={String(item.max_threshold)}
+                        onChangeText={(t) => updateScannedItemValue(idx, 'max_threshold', t)}
                       />
                     </View>
                   </View>
@@ -669,19 +745,19 @@ export default function WarehouseScreen() {
             )}
           </ScrollView>
 
-          <View style={{padding: 16, backgroundColor: '#FFF', borderTopWidth: 1, borderColor: '#eee', gap: 12}}>
-            <TouchableOpacity style={[styles.btnOutline, {borderStyle: 'dashed', borderColor: '#0052FF', flexDirection: 'row', justifyContent: 'center'}]} onPress={handleScanFaldone} disabled={isScanningReceipt}>
+          <View style={{ padding: 16, backgroundColor: '#FFF', borderTopWidth: 1, borderColor: '#eee', gap: 12 }}>
+            <TouchableOpacity style={[styles.btnOutline, { borderStyle: 'dashed', borderColor: '#0052FF', flexDirection: 'row', justifyContent: 'center' }]} onPress={handleScanFaldone} disabled={isScanningReceipt}>
               {isScanningReceipt ? <ActivityIndicator size="small" color="#0052FF" /> : (
                 <>
-                  <Ionicons name="camera" size={20} color="#0052FF" style={{marginRight: 8}}/>
-                  <Text style={{color: '#0052FF', fontWeight: 'bold'}}>+ Fotografa altro</Text>
+                  <Ionicons name="camera" size={20} color="#0052FF" style={{ marginRight: 8 }} />
+                  <Text style={{ color: '#0052FF', fontWeight: 'bold' }}>+ Fotografa altro</Text>
                 </>
               )}
             </TouchableOpacity>
-            
+
             {onboardingScannedItems.length > 0 && (
               <TouchableOpacity style={styles.btnPrimaryFull} onPress={confirmFaldoni}>
-                <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 16}}>Salva in Magazzino ({onboardingScannedItems.length})</Text>
+                <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16 }}>Salva in Magazzino ({onboardingScannedItems.length})</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -694,47 +770,64 @@ export default function WarehouseScreen() {
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setIsAddModalVisible(false)}><Ionicons name="close" size={28} color="#000" /></TouchableOpacity>
             <Text style={styles.headerTitle}>Nuovo Prodotto</Text>
-            <View style={{width: 28}}/>
+            <View style={{ width: 28 }} />
           </View>
           <ScrollView contentContainerStyle={styles.modalBody}>
             <Text style={styles.label}>Nome Prodotto</Text>
-            <TextInput style={styles.input} value={newProd.name} onChangeText={(t) => setNewProd({...newProd, name: t})} />
+            <TextInput style={styles.input} value={newProd.name} onChangeText={(t) => setNewProd({ ...newProd, name: t })} />
 
-            <View style={{flexDirection: 'row', gap: 12}}>
-              <View style={{flex: 1}}>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.label}>Soglia Minima</Text>
-                <TextInput style={styles.input} keyboardType="numeric" value={newProd.min} onChangeText={(t) => setNewProd({...newProd, min: t})} />
+                <TextInput style={styles.input} keyboardType="numeric" value={newProd.min} onChangeText={(t) => setNewProd({ ...newProd, min: t })} />
               </View>
-              <View style={{flex: 1}}>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.label}>Soglia Massima</Text>
-                <TextInput style={styles.input} keyboardType="numeric" value={newProd.max} onChangeText={(t) => setNewProd({...newProd, max: t})} />
+                <TextInput style={styles.input} keyboardType="numeric" value={newProd.max} onChangeText={(t) => setNewProd({ ...newProd, max: t })} />
               </View>
             </View>
 
             <Text style={styles.label}>Unità di Misura</Text>
-            <TextInput style={styles.input} value={newProd.unit} onChangeText={(t) => setNewProd({...newProd, unit: t})} placeholder="Es. pz, kg, litri" />
+            <TextInput style={styles.input} value={newProd.unit} onChangeText={(t) => setNewProd({ ...newProd, unit: t })} placeholder="Es. pz, kg, litri" />
 
-            <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 16, marginBottom: 8}}>
-              <Text style={[styles.label, {marginTop: 0, flex: 1}]}>Fornitore</Text>
-              <TouchableOpacity onPress={() => setNewProd({...newProd, isNewSupplier: !newProd.isNewSupplier})}>
-                <Text style={{color: '#0052FF', fontWeight: 'bold'}}>{newProd.isNewSupplier ? "Scegli Esistente" : "Nuovo Fornitore"}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 16, marginBottom: 8 }}>
+              <Text style={[styles.label, { marginTop: 0, flex: 1 }]}>Fornitore</Text>
+              <TouchableOpacity onPress={() => setNewProd({ ...newProd, isNewSupplier: !newProd.isNewSupplier })}>
+                <Text style={{ color: '#0052FF', fontWeight: 'bold' }}>{newProd.isNewSupplier ? "Scegli Esistente" : "Nuovo Fornitore"}</Text>
               </TouchableOpacity>
             </View>
 
             {newProd.isNewSupplier ? (
-              <TextInput style={styles.input} placeholder="Nome Nuovo Fornitore" value={newProd.supplier} onChangeText={(t) => setNewProd({...newProd, supplier: t})} />
+              <>
+                <TextInput style={styles.input} placeholder="Nome Nuovo Fornitore" value={newProd.supplier} onChangeText={(t) => setNewProd({ ...newProd, supplier: t })} />
+
+                <Text style={styles.label}>Canale di Trasmissione</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+                  {AVAILABLE_CHANNELS.map(ch => (
+                    <TouchableOpacity key={ch} style={[styles.supplierChip, newProd.commChannel === ch && styles.supplierChipActive]} onPress={() => setNewProd({ ...newProd, commChannel: ch })}>
+                      <Text style={{ color: newProd.commChannel === ch ? '#0052FF' : '#666' }}>{ch}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                {newProd.commChannel === 'Telefono' && (
+                  <View style={{marginBottom: 16}}>
+                    <Text style={[styles.label, {marginTop: 0}]}>Numero di Telefono</Text>
+                    <TextInput style={styles.input} placeholder="+39 333 1234567" keyboardType="phone-pad" value={newProd.phone} onChangeText={(t) => setNewProd({...newProd, phone: t})} />
+                  </View>
+                )}
+              </>
             ) : (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 16}}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
                 {uniqueSuppliers.map(s => (
-                  <TouchableOpacity key={s.name} style={[styles.supplierChip, newProd.supplier === s.name && styles.supplierChipActive]} onPress={() => setNewProd({...newProd, supplier: s.name})}>
-                    <Text style={{color: newProd.supplier === s.name ? '#0052FF' : '#666'}}>{s.name}</Text>
+                  <TouchableOpacity key={s.name} style={[styles.supplierChip, newProd.supplier === s.name && styles.supplierChipActive]} onPress={() => setNewProd({ ...newProd, supplier: s.name })}>
+                    <Text style={{ color: newProd.supplier === s.name ? '#0052FF' : '#666' }}>{s.name}</Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
             )}
 
             <TouchableOpacity style={styles.btnPrimaryFull} onPress={handleSaveNewProduct} disabled={isUpdatingCategories}>
-              {isUpdatingCategories ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 16}}>Salva e Analizza (AI)</Text>}
+              {isUpdatingCategories ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16 }}>Salva e Analizza (AI)</Text>}
             </TouchableOpacity>
           </ScrollView>
         </SafeAreaView>
@@ -746,28 +839,28 @@ export default function WarehouseScreen() {
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setIsEditProductModalVisible(false)}><Ionicons name="close" size={28} color="#000" /></TouchableOpacity>
             <Text style={styles.headerTitle}>Modifica Dettagli</Text>
-            <View style={{width: 28}}/>
+            <View style={{ width: 28 }} />
           </View>
           <ScrollView contentContainerStyle={styles.modalBody}>
             <Text style={styles.label}>Nome Prodotto</Text>
-            <TextInput style={styles.input} value={editProdData.name} onChangeText={(t) => setEditProdData({...editProdData, name: t})} />
+            <TextInput style={styles.input} value={editProdData.name} onChangeText={(t) => setEditProdData({ ...editProdData, name: t })} />
 
-            <View style={{flexDirection: 'row', gap: 12}}>
-              <View style={{flex: 1}}>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.label}>Soglia Minima</Text>
-                <TextInput style={styles.input} keyboardType="numeric" value={editProdData.min} onChangeText={(t) => setEditProdData({...editProdData, min: t})} />
+                <TextInput style={styles.input} keyboardType="numeric" value={editProdData.min} onChangeText={(t) => setEditProdData({ ...editProdData, min: t })} />
               </View>
-              <View style={{flex: 1}}>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.label}>Soglia Massima</Text>
-                <TextInput style={styles.input} keyboardType="numeric" value={editProdData.max} onChangeText={(t) => setEditProdData({...editProdData, max: t})} />
+                <TextInput style={styles.input} keyboardType="numeric" value={editProdData.max} onChangeText={(t) => setEditProdData({ ...editProdData, max: t })} />
               </View>
             </View>
 
             <Text style={styles.label}>Unità di Misura</Text>
-            <TextInput style={styles.input} value={editProdData.unit} onChangeText={(t) => setEditProdData({...editProdData, unit: t})} />
+            <TextInput style={styles.input} value={editProdData.unit} onChangeText={(t) => setEditProdData({ ...editProdData, unit: t })} />
 
             <TouchableOpacity style={styles.btnPrimaryFull} onPress={handleSaveProductEdit}>
-              <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 16}}>Salva Modifiche</Text>
+              <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16 }}>Salva Modifiche</Text>
             </TouchableOpacity>
           </ScrollView>
         </SafeAreaView>
@@ -777,24 +870,102 @@ export default function WarehouseScreen() {
       <Modal visible={isSupplierModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalSmallBox}>
-            <Text style={{fontSize: 18, fontWeight: 'bold', marginBottom: 16}}>Modifica Fornitore</Text>
-            
+            <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 16 }}>Modifica Fornitore</Text>
+
             <Text style={[styles.label, { alignSelf: 'flex-start', marginTop: 0 }]}>Scegli esistente:</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ width: '100%', maxHeight: 45, marginBottom: 16 }}>
               {uniqueSuppliers.map(s => (
-                <TouchableOpacity key={s.name} style={[styles.supplierChip, newSupplierName === s.name && styles.supplierChipActive]} onPress={() => setNewSupplierName(s.name)}>
-                  <Text style={{color: newSupplierName === s.name ? '#0052FF' : '#666'}}>{s.name}</Text>
+                <TouchableOpacity key={s.name} style={[styles.supplierChip, newSupplierName === s.name && styles.supplierChipActive]} onPress={() => { setNewSupplierName(s.name); setNewSupplierChannel(supplierChannels[s.name] || 'WhatsApp'); setNewSupplierPhone(supplierPhones[s.name] || ''); }}>
+                  <Text style={{ color: newSupplierName === s.name ? '#0052FF' : '#666' }}>{s.name}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
 
             <Text style={[styles.label, { alignSelf: 'flex-start' }]}>Oppure scrivi un nome:</Text>
-            <TextInput style={[styles.input, {width: '100%'}]} value={newSupplierName} onChangeText={setNewSupplierName} placeholder="Nome fornitore" />
+            <TextInput style={[styles.input, { width: '100%' }]} value={newSupplierName} onChangeText={setNewSupplierName} placeholder="Nome fornitore" />
 
-            <View style={{flexDirection: 'row', gap: 12, marginTop: 16}}>
-              <TouchableOpacity style={[styles.btnOutline, {flex: 1}]} onPress={() => setIsSupplierModalVisible(false)}><Text>Annulla</Text></TouchableOpacity>
-              <TouchableOpacity style={[styles.btnPrimaryFull, {flex: 1, marginTop: 0}]} onPress={handleUpdateSupplier}><Text style={{color:'#FFF'}}>Salva</Text></TouchableOpacity>
+            <Text style={[styles.label, { alignSelf: 'flex-start', marginTop: 8 }]}>Canale di trasmissione:</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ width: '100%', maxHeight: 45, marginBottom: 16 }}>
+              {AVAILABLE_CHANNELS.map(ch => (
+                <TouchableOpacity key={ch} style={[styles.supplierChip, newSupplierChannel === ch && styles.supplierChipActive]} onPress={() => setNewSupplierChannel(ch)}>
+                  <Text style={{ color: newSupplierChannel === ch ? '#0052FF' : '#666' }}>{ch}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            
+            {newSupplierChannel === 'Telefono' && (
+               <View style={{width: '100%'}}>
+                 <Text style={[styles.label, { alignSelf: 'flex-start', marginTop: 0 }]}>Numero di Telefono:</Text>
+                 <TextInput style={[styles.input, {width: '100%'}]} placeholder="+39 333 1234567" keyboardType="phone-pad" value={newSupplierPhone} onChangeText={setNewSupplierPhone} />
+               </View>
+            )}
+
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+              <TouchableOpacity style={[styles.btnOutline, { flex: 1 }]} onPress={() => setIsSupplierModalVisible(false)}><Text>Annulla</Text></TouchableOpacity>
+              <TouchableOpacity style={[styles.btnPrimaryFull, { flex: 1, marginTop: 0 }]} onPress={handleUpdateSupplier}><Text style={{ color: '#FFF' }}>Salva</Text></TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* --- MODALE CAMBIA CANALE TRASMISSIONE --- */}
+      <Modal visible={isChannelModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSmallBox}>
+            <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 16, textAlign: 'center' }}>
+              Mezzo di trasmissione
+            </Text>
+            <Text style={{ fontSize: 14, color: '#666', marginBottom: 16, textAlign: 'center' }}>
+              Seleziona il canale predefinito per comunicare con: {activeSupplierForChannel}
+            </Text>
+
+            <ScrollView style={{ width: '100%', maxHeight: 300, marginBottom: 16 }}>
+              {AVAILABLE_CHANNELS.map(ch => {
+                const isSelected = modalChannel === ch;
+                return (
+                  <View key={ch}>
+                    <TouchableOpacity
+                      style={{
+                        padding: 16,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: isSelected ? '#0052FF' : '#EAEAEA',
+                        backgroundColor: isSelected ? '#F0F4FF' : '#FFF',
+                        marginBottom: isSelected && ch === 'Telefono' ? 0 : 8,
+                        borderBottomLeftRadius: isSelected && ch === 'Telefono' ? 0 : 8,
+                        borderBottomRightRadius: isSelected && ch === 'Telefono' ? 0 : 8,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}
+                      onPress={() => setModalChannel(ch)}
+                    >
+                      <Text style={{ color: isSelected ? '#0052FF' : '#333', fontWeight: isSelected ? 'bold' : 'normal' }}>{ch}</Text>
+                      {isSelected && <Ionicons name="checkmark-circle" size={20} color="#0052FF" />}
+                    </TouchableOpacity>
+                    {isSelected && ch === 'Telefono' && (
+                      <View style={{ backgroundColor: '#F0F4FF', padding: 16, borderBottomLeftRadius: 8, borderBottomRightRadius: 8, marginBottom: 8, borderWidth: 1, borderTopWidth: 0, borderColor: '#0052FF' }}>
+                        <Text style={[styles.label, {marginTop: 0}]}>Numero di Telefono:</Text>
+                        <TextInput 
+                          style={styles.input} 
+                          placeholder="+39 333 1234567" 
+                          keyboardType="phone-pad"
+                          value={modalPhone}
+                          onChangeText={setModalPhone}
+                        />
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            <TouchableOpacity style={[styles.btnPrimaryFull, { width: '100%', marginTop: 0, marginBottom: 12 }]} onPress={handleSaveChannel}>
+              <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Salva Preferenza</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.btnOutline, { width: '100%' }]} onPress={() => setIsChannelModalVisible(false)}>
+              <Text>Annulla</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -814,12 +985,12 @@ const styles = StyleSheet.create({
   emptyIconBg: { backgroundColor: '#E8F0FE', padding: 24, borderRadius: 100, marginBottom: 24 },
   emptyTitle: { fontSize: 24, fontWeight: 'bold', color: '#111', marginBottom: 12, textAlign: 'center' },
   emptySubtitle: { fontSize: 15, color: '#666', textAlign: 'center', marginBottom: 24, lineHeight: 22, paddingHorizontal: 12 },
-  
+
   btnFaldoni: { flexDirection: 'row', backgroundColor: '#0B132B', paddingVertical: 16, paddingHorizontal: 32, borderRadius: 12, alignItems: 'center', justifyContent: 'center', width: '100%', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 5 },
   dividerContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 32 },
   dividerLine: { flex: 1, height: 1, backgroundColor: '#E0E0E0' },
   dividerText: { marginHorizontal: 12, color: '#888', fontSize: 11, fontWeight: 'bold', letterSpacing: 1 },
-  
+
   customInputContainer: { width: '100%', gap: 10 },
   customInput: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#EAEAEA', borderRadius: 8, padding: 14, fontSize: 15, width: '100%', color: '#333' },
   btnCustomGenerate: { flexDirection: 'row', backgroundColor: '#0052FF', padding: 14, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
@@ -830,23 +1001,23 @@ const styles = StyleSheet.create({
   dropdownMenu: { position: 'absolute', top: 60, left: 16, backgroundColor: '#FFF', borderRadius: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5, zIndex: 100, minWidth: 200 },
   dropdownItem: { flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
   dropdownText: { fontSize: 15, color: '#333', fontWeight: '500' },
-  
+
   searchContainer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, backgroundColor: '#FFF' },
   searchIcon: { position: 'absolute', left: 28, zIndex: 1, top: 22 },
   searchInput: { flex: 1, backgroundColor: '#F8F9FA', paddingVertical: 10, paddingLeft: 40, paddingRight: 16, borderRadius: 8, borderWidth: 1, borderColor: '#EAEAEA' },
   clearFilterBadge: { backgroundColor: '#0052FF', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, marginLeft: 8 },
   clearFilterText: { color: '#FFF', fontSize: 12, fontWeight: 'bold' },
-  
+
   categoriesWrapper: { backgroundColor: '#FFF', borderBottomWidth: 1, borderColor: '#F0F0F0' },
   categoriesScroll: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
   categoryChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F8F9FA', borderWidth: 1, borderColor: '#EAEAEA', marginRight: 8 },
   categoryChipActive: { backgroundColor: '#0B132B', borderColor: '#0B132B' },
-  
+
   addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', margin: 16, padding: 16, backgroundColor: '#F0F4FF', borderRadius: 8, borderStyle: 'dashed', borderWidth: 1, borderColor: '#0052FF' },
   addBtnText: { color: '#0052FF', fontWeight: 'bold', fontSize: 16 },
   listContainer: { paddingBottom: 20 },
   separator: { height: 1, backgroundColor: '#F0F0F0', marginHorizontal: 16 },
-  
+
   card: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: '#FFFFFF' },
   imagePlaceholder: { width: 50, height: 50, borderRadius: 10, backgroundColor: '#F5F5F5', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#EAEAEA' },
   infoContainer: { flex: 1, marginLeft: 16, marginRight: 12 },
@@ -856,12 +1027,12 @@ const styles = StyleSheet.create({
   badgeHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   badgeLabel: { fontSize: 11, fontWeight: '600' },
   badgeQuantity: { fontSize: 14, fontWeight: '700' },
-  
+
   editActions: { flexDirection: 'row', gap: 12 },
   actionBtnEdit: { padding: 10, backgroundColor: '#F5F5F5', borderRadius: 8 },
   actionBtnTrash: { padding: 10, backgroundColor: '#FCE8E6', borderRadius: 8 },
   actionBtnTruck: { padding: 10, backgroundColor: '#E8F0FE', borderRadius: 8 },
-  
+
   modalContainer: { flex: 1, backgroundColor: '#FFF' },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderColor: '#F0F0F0' },
   modalBody: { padding: 16 },
@@ -869,10 +1040,10 @@ const styles = StyleSheet.create({
   input: { backgroundColor: '#F8F9FA', borderWidth: 1, borderColor: '#EAEAEA', borderRadius: 8, padding: 14, fontSize: 15, marginBottom: 12 },
   smallInput: { backgroundColor: '#F8F9FA', borderWidth: 1, borderColor: '#CCC', borderRadius: 8, fontSize: 14 },
   scannedItemBox: { backgroundColor: '#FFF', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#EAEAEA', marginBottom: 12 },
-  
+
   supplierChip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, backgroundColor: '#F8F9FA', borderWidth: 1, borderColor: '#EAEAEA', marginRight: 8 },
   supplierChipActive: { backgroundColor: '#E8F0FE', borderColor: '#0052FF' },
-  
+
   btnPrimaryFull: { backgroundColor: '#0052FF', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 12 },
   btnOutline: { padding: 16, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: '#CCC' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
