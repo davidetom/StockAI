@@ -7,7 +7,7 @@ import { ActivityIndicator, Alert, FlatList, Linking, Modal, SafeAreaView, Scrol
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../../auth';
 import { scanDeliveryNote } from '../../ai';
-import { addTransitOrder, completeTransitOrder, completeTransitOrderWithScan, getDraftOrders, getProducts, getTransitOrders } from '../../db';
+import { addTransitOrder, completeTransitOrder, completeTransitOrderWithScan, getDraftOrders, getProducts, getTransitOrders, getSuppliers } from '../../db';
 
 const ICON_NAMES = [
   'baby-care', 'bakery-shop', 'bread', 'canned-food', 'catering', 'cigarette', 'cleaning-products', 'coffee', 'dairy-products', 'fast-food', 'groceries', 'liquor', 'meat', 'medicine', 'pantry', 'personal-care', 'pet-food', 'seafood', 'soft-drink', 'sweet', 'takeaway'
@@ -25,6 +25,7 @@ export default function OrdersScreen() {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [supplierChannels, setSupplierChannels] = useState<Record<string, string>>({});
   const [supplierPhones, setSupplierPhones] = useState<Record<string, string>>({});
+  const [supplierEmails, setSupplierEmails] = useState<Record<string, string>>({});
   
   const [activeOrder, setActiveOrder] = useState<any>(null);
   const [isEditModalVisible, setEditModalVisible] = useState(false);
@@ -49,16 +50,22 @@ export default function OrdersScreen() {
     setAllProducts(products);
     
     try {
-      const channelsData = await AsyncStorage.getItem('@supplier_channels');
-      if (channelsData) {
-        setSupplierChannels(JSON.parse(channelsData));
-      }
-      const phonesData = await AsyncStorage.getItem('@supplier_phones');
-      if (phonesData) {
-        setSupplierPhones(JSON.parse(phonesData));
-      }
+      const suppliers = await getSuppliers();
+      const channels: Record<string, string> = {};
+      const phones: Record<string, string> = {};
+      const emails: Record<string, string> = {};
+
+      suppliers.forEach((s: any) => {
+        channels[s.name] = s.channel || 'WhatsApp';
+        if (s.phone) phones[s.name] = s.phone;
+        if (s.email) emails[s.name] = s.email;
+      });
+
+      setSupplierChannels(channels);
+      setSupplierPhones(phones);
+      setSupplierEmails(emails);
     } catch (e) {
-      console.error(e);
+      console.error('Errore nel caricamento canali', e);
     }
   };
 
@@ -85,16 +92,18 @@ export default function OrdersScreen() {
   const handleSendOrder = async (order: any) => {
     const channel = supplierChannels[order.supplierName] || 'WhatsApp';
     const text = encodeURIComponent(generateOrderText(order));
+    const phone = supplierPhones[order.supplierName] || '';
+    const email = supplierEmails[order.supplierName] || '';
 
     let url = '';
     if (channel === 'WhatsApp') {
-      url = `whatsapp://send?text=${text}`;
+      const cleanPhone = phone.replace(/[^0-9+]/g, '');
+      url = cleanPhone ? `whatsapp://send?phone=${cleanPhone}&text=${text}` : `whatsapp://send?text=${text}`;
     } else if (channel === 'Email') {
-      url = `mailto:?subject=Ordine%20StockAI&body=${text}`;
+      url = email ? `mailto:${email}?subject=Ordine%20StockAI&body=${text}` : `mailto:?subject=Ordine%20StockAI&body=${text}`;
     } else if (channel === 'Telefono') {
       await Clipboard.setStringAsync(generateOrderText(order));
       showToast("✅ Testo ordine copiato negli appunti!");
-      const phone = supplierPhones[order.supplierName] || '';
       url = `tel:${phone}`;
     } else {
       await Clipboard.setStringAsync(generateOrderText(order));
@@ -230,7 +239,7 @@ export default function OrdersScreen() {
     <View style={styles.card}>
       <View style={styles.cardHeader}>
         <View>
-          <Text style={styles.orderId}>{item.id}</Text>
+          <Text style={styles.orderId}>{item.display_id || item.id}</Text>
           <Text style={styles.orderDate}>Creato il {item.date}</Text>
         </View>
         <View style={[styles.badge, activeTab === 'transit' ? styles.badgeTransit : styles.badgeDraft]}>

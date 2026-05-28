@@ -1,240 +1,340 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from './supabase';
 
-const DB_KEY = '@stockai_products_v2';
-const TRANSIT_ORDERS_KEY = '@stockai_transit_orders';
-
-const INITIAL_DATA = [
-  { id: '1', name: 'Gin Mare', supplier_id: 'Forniture Rossi SpA', current_stock: 12, min_threshold: 5, max_threshold: 24, unit: 'bottiglie' },
-  { id: '2', name: 'Vodka Belvedere', supplier_id: 'Forniture Rossi SpA', current_stock: 3, min_threshold: 6, max_threshold: 18, unit: 'bottiglie' },
-  { id: '3', name: 'Tonica Fever Tree', supplier_id: 'Bevande Locali Srl', current_stock: 20, min_threshold: 24, max_threshold: 100, unit: 'u.' },
-  { id: '4', name: 'Pomodori San Marzano', supplier_id: 'Ortofrutta Locale', current_stock: 5, min_threshold: 15, max_threshold: 30, unit: 'kg' },
-  { id: '5', name: 'Basilico Fresco', supplier_id: 'Ortofrutta Locale', current_stock: 1, min_threshold: 3, max_threshold: 5, unit: 'kg' },
-];
+// Helper per ottenere il locale_id dell'utente corrente
+export const getLocaleId = async () => {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session || !session.user) throw new Error("Utente non loggato");
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('locale_id')
+    .eq('id', session.user.id)
+    .single();
+  if (error || !data) throw new Error("Impossibile recuperare il locale_id");
+  return data.locale_id;
+};
 
 export const emptyWarehouse = async () => {
   try {
-    await AsyncStorage.setItem(DB_KEY, JSON.stringify([]));
-    await AsyncStorage.setItem(TRANSIT_ORDERS_KEY, JSON.stringify([]));
+    const locale_id = await getLocaleId();
+    await supabase.from('products').delete().eq('locale_id', locale_id);
+    await supabase.from('transit_orders').delete().eq('locale_id', locale_id);
   } catch (e) {
     console.error('Errore durante lo svuotamento del magazzino', e);
   }
 };
 
 export const initDB = async () => {
+  // Non fa nulla: gestito da Supabase
+};
+
+// --- LOGICA FORNITORI ---
+export const getSuppliers = async () => {
   try {
-    const existingData = await AsyncStorage.getItem(DB_KEY);
-    if (!existingData) {
-      await AsyncStorage.setItem(DB_KEY, JSON.stringify(INITIAL_DATA));
-    }
+    const { data, error } = await supabase.from('suppliers').select('*');
+    if (error) throw error;
+    return data || [];
   } catch (e) {
-    console.error('Errore inizializzazione DB', e);
+    console.error('Errore getSuppliers', e);
+    return [];
   }
 };
 
+export const updateSupplier = async (name, channel, phone, email) => {
+  try {
+    const locale_id = await getLocaleId();
+    const { error } = await supabase.from('suppliers').upsert(
+      { locale_id, name, channel, phone, email },
+      { onConflict: 'locale_id, name' }
+    );
+    if (error) throw error;
+  } catch (e) {
+    console.error('Errore updateSupplier', e);
+  }
+};
+
+export const deleteSupplierIfEmpty = async (supplierName) => {
+  try {
+    if (!supplierName) return;
+    const locale_id = await getLocaleId();
+    
+    // Check if there are any products left for this supplier in this locale
+    const { data, error: selectError } = await supabase.from('products')
+      .select('id')
+      .eq('supplier_id', supplierName)
+      .eq('locale_id', locale_id)
+      .limit(1);
+
+    if (selectError) {
+      console.error('Errore lettura prodotti per deleteSupplierIfEmpty:', selectError);
+    }
+
+    // If no products found, delete the supplier
+    if (!data || data.length === 0) {
+      const { error: deleteError } = await supabase.from('suppliers')
+        .delete()
+        .eq('name', supplierName)
+        .eq('locale_id', locale_id);
+      
+      if (deleteError) {
+        console.error('Errore delete fornitore:', deleteError);
+      }
+    }
+  } catch (e) {
+    console.error('Errore deleteSupplierIfEmpty', e);
+  }
+};
+
+// --- LOGICA PRODOTTI ---
 export const getProducts = async () => {
   try {
-    const data = await AsyncStorage.getItem(DB_KEY);
-    return data ? JSON.parse(data) : [];
+    const { data, error } = await supabase.from('products').select('*');
+    if (error) throw error;
+    return data || [];
   } catch (e) {
+    console.error('Errore getProducts', e);
     return [];
+  }
+};
+
+export const addProduct = async (productData) => {
+  try {
+    const locale_id = await getLocaleId();
+    const newProduct = { 
+      ...productData, 
+      locale_id,
+      current_stock: productData.current_stock || 0
+    };
+    const { error } = await supabase.from('products').insert(newProduct);
+    if (error) throw error;
+  } catch (e) {
+    console.error('Errore addProduct', e);
   }
 };
 
 export const updateProductStock = async (productId, quantityChange) => {
   try {
+    const { data: product } = await supabase.from('products').select('current_stock').eq('id', productId).single();
+    if (product) {
+      const newStock = Math.max(0, Number(product.current_stock) + quantityChange);
+      await supabase.from('products').update({ current_stock: newStock }).eq('id', productId);
+    }
+  } catch (e) {
+    console.error('Errore updateProductStock', e);
+  }
+};
+
+export const deleteProduct = async (productId) => {
+  try {
+    const { data: oldProd } = await supabase.from('products').select('supplier_id').eq('id', productId).single();
+    const oldSupplier = oldProd?.supplier_id;
+
+    const { error } = await supabase.from('products').delete().eq('id', productId);
+    if (error) throw error;
+
+    if (oldSupplier) {
+      await deleteSupplierIfEmpty(oldSupplier);
+    }
+  } catch (e) {
+    console.error('Errore deleteProduct', e);
+  }
+};
+
+export const updateProductDetails = async (productId, updatedData) => {
+  try {
+    const { error } = await supabase.from('products').update(updatedData).eq('id', productId);
+    if (error) throw error;
+  } catch (e) {
+    console.error('Errore updateProductDetails', e);
+  }
+};
+
+export const updateProductSupplier = async (productId, newSupplier) => {
+  try {
+    const { data: oldProd } = await supabase.from('products').select('supplier_id').eq('id', productId).single();
+    const oldSupplier = oldProd?.supplier_id;
+
+    const { error } = await supabase.from('products').update({ supplier_id: newSupplier }).eq('id', productId);
+    if (error) throw error;
+
+    if (oldSupplier && oldSupplier !== newSupplier) {
+      await deleteSupplierIfEmpty(oldSupplier);
+    }
+  } catch (e) {
+    console.error('Errore updateProductSupplier', e);
+  }
+};
+
+export const applyProductCategories = async (aiMapping) => {
+  try {
     const products = await getProducts();
-    const updatedProducts = products.map(p => {
-      if (p.id === productId) {
-        return { ...p, current_stock: Math.max(0, p.current_stock + quantityChange) };
+    for (const p of products) {
+      if (aiMapping[p.id]) {
+        await supabase.from('products').update({
+          category: aiMapping[p.id].category || p.category,
+          icon: aiMapping[p.id].icon || p.icon
+        }).eq('id', p.id);
       }
-      return p;
-    });
-    await AsyncStorage.setItem(DB_KEY, JSON.stringify(updatedProducts));
-    return updatedProducts;
-  } catch (e) {}
+    }
+  } catch (e) {
+    console.error('Errore applyProductCategories', e);
+  }
+};
+
+export const addMultipleProducts = async (newProductsArray) => {
+  try {
+    const locale_id = await getLocaleId();
+    const toInsert = newProductsArray.map(p => ({
+      locale_id,
+      name: p.name,
+      supplier_id: p.supplier_id || 'Fornitore Generico',
+      current_stock: Number(p.current_stock) || 0,
+      min_threshold: Number(p.min_threshold) || 5,
+      max_threshold: Number(p.max_threshold) || 20,
+      unit: p.unit || 'pz.',
+      category: p.category,
+      icon: p.icon
+    }));
+    const { error } = await supabase.from('products').insert(toInsert);
+    if (error) throw error;
+  } catch (e) {
+    console.error('Errore salvataggio massivo:', e);
+  }
 };
 
 // --- LOGICA ORDINI IN TRANSITO ---
-
 export const getTransitOrders = async () => {
   try {
-    const data = await AsyncStorage.getItem(TRANSIT_ORDERS_KEY);
-    return data ? JSON.parse(data) : [];
+    const { data, error } = await supabase.from('transit_orders').select('*');
+    if (error) throw error;
+    // La colonna supplier_name sul DB sostituisce 'supplier' del vecchio mock. 
+    // Mapperemo supplier_name -> supplier per non rompere il frontend.
+    return (data || []).map(o => ({
+      ...o,
+      supplierName: o.supplier_name,
+      supplier: o.supplier_name
+    }));
   } catch (e) {
+    console.error('Errore getTransitOrders', e);
     return [];
   }
 };
 
 export const addTransitOrder = async (order) => {
   try {
-    const orders = await getTransitOrders();
-    const newOrder = { ...order, status: 'In Transito' };
-    orders.push(newOrder);
-    await AsyncStorage.setItem(TRANSIT_ORDERS_KEY, JSON.stringify(orders));
-  } catch (e) {}
+    const locale_id = await getLocaleId();
+    const newOrder = { 
+      locale_id,
+      supplier_name: order.supplierName || order.supplier,
+      status: 'In Transito',
+      date: order.date,
+      items: order.items,
+      display_id: order.id
+    };
+    const { error } = await supabase.from('transit_orders').insert(newOrder);
+    if (error) throw error;
+  } catch (e) {
+    console.error('Errore addTransitOrder', e);
+  }
 };
 
 export const completeTransitOrder = async (orderId, items) => {
   try {
-    // 1. Rimuovi l'ordine dalla lista dei transiti
-    const orders = await getTransitOrders();
-    const updatedOrders = orders.filter(o => o.id !== orderId);
-    await AsyncStorage.setItem(TRANSIT_ORDERS_KEY, JSON.stringify(updatedOrders));
+    await supabase.from('transit_orders').delete().eq('id', orderId);
 
-    // 2. Aggiungi fisicamente le quantità al magazzino
-    const products = await getProducts();
-    let updatedProducts = [...products];
     for (const item of items) {
-      updatedProducts = updatedProducts.map(p => {
-        if (p.id === item.id) {
-          return { ...p, current_stock: p.current_stock + item.orderQuantity };
-        }
-        return p;
-      });
+      const { data: product } = await supabase.from('products').select('current_stock').eq('id', item.id).single();
+      if (product) {
+        await supabase.from('products').update({ 
+          current_stock: Number(product.current_stock) + Number(item.orderQuantity) 
+        }).eq('id', item.id);
+      }
     }
-    await AsyncStorage.setItem(DB_KEY, JSON.stringify(updatedProducts));
-  } catch (e) {}
+  } catch (e) {
+    console.error('Errore completeTransitOrder', e);
+  }
+};
+
+export const completeTransitOrderWithScan = async (orderId, scannedItems, supplierName) => {
+  try {
+    const locale_id = await getLocaleId();
+    await supabase.from('transit_orders').delete().eq('id', orderId);
+
+    for (const item of scannedItems) {
+      if (item.isNew) {
+        const newProd = {
+          locale_id,
+          name: item.name,
+          supplier_id: supplierName,
+          unit: item.unit,
+          min_threshold: parseInt(item.minThreshold) || 5,
+          max_threshold: parseInt(item.maxThreshold) || 20,
+          current_stock: Number(item.quantity) || 0,
+          category: item.category,
+          icon: item.icon
+        };
+        await supabase.from('products').insert(newProd);
+      } else {
+        const { data: product } = await supabase.from('products').select('current_stock').eq('id', item.id).single();
+        if (product) {
+          await supabase.from('products').update({ 
+            current_stock: Number(product.current_stock) + Number(item.quantity) 
+          }).eq('id', item.id);
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Errore completeTransitOrderWithScan', e);
+  }
 };
 
 // --- LOGICA BOZZE ---
-
 export const getDraftOrders = async () => {
-  const products = await getProducts();
-  const transitOrders = await getTransitOrders();
-  
-  // Trova i prodotti che stiamo GIÀ aspettando per non riordinarli
-  const productsInTransit = new Set();
-  transitOrders.forEach(order => {
-    order.items.forEach(item => productsInTransit.add(item.id));
-  });
+  try {
+    const products = await getProducts();
+    const transitOrders = await getTransitOrders();
+    
+    const productsInTransit = new Set();
+    transitOrders.forEach(order => {
+      (order.items || []).forEach(item => productsInTransit.add(item.id));
+    });
 
-  const ordersBySupplier = {};
+    const ordersBySupplier = {};
 
-  products.forEach(p => {
-    // Se è in transito, lo ignoriamo nella creazione della bozza
-    if (productsInTransit.has(p.id)) return;
+    products.forEach(p => {
+      if (productsInTransit.has(p.id)) return;
 
-    if (p.current_stock <= p.min_threshold * 1.5) {
-      if (!ordersBySupplier[p.supplier_id]) {
-        // Creiamo un numero stabile (da 0 a 999) basato sul nome del fornitore
-        const stableNum = p.supplier_id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 1000;
-        
-        // Calcoliamo la data odierna nel formato GG-MM-AAAA
-        const today = new Date();
-        const day = String(today.getDate()).padStart(2, '0');
-        const month = String(today.getMonth() + 1).padStart(2, '0'); // I mesi partono da 0 in JS
-        const year = today.getFullYear();
-        
-        ordersBySupplier[p.supplier_id] = {
-          id: `ORD-${day}-${month}-${year}-${stableNum}`, // Es. ORD-22-05-2026-123
-          supplierName: p.supplier_id,
-          date: today.toLocaleDateString('it-IT', { day: 'numeric', month: 'long' }),
-          status: 'Bozza',
-          items: []
-        };
+      if (p.current_stock <= p.min_threshold * 1.5) {
+        if (!ordersBySupplier[p.supplier_id]) {
+          const stableNum = (p.supplier_id || '').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 1000;
+          const today = new Date();
+          const day = String(today.getDate()).padStart(2, '0');
+          const month = String(today.getMonth() + 1).padStart(2, '0');
+          const year = today.getFullYear();
+          
+          ordersBySupplier[p.supplier_id] = {
+            id: `ORD-${day}-${month}-${year}-${stableNum}`,
+            supplierName: p.supplier_id,
+            date: today.toLocaleDateString('it-IT', { day: 'numeric', month: 'long' }),
+            status: 'Bozza',
+            items: []
+          };
+        }
+        const orderQty = Math.max(0, p.max_threshold - p.current_stock);
+        if (orderQty > 0) {
+          ordersBySupplier[p.supplier_id].items.push({ ...p, orderQuantity: orderQty });
+        }
       }
-      const orderQty = Math.max(0, p.max_threshold - p.current_stock);
-      if (orderQty > 0) {
-        ordersBySupplier[p.supplier_id].items.push({ ...p, orderQuantity: orderQty });
-      }
-    }
-  });
+    });
 
-  return Object.values(ordersBySupplier);
-};
-
-// --- LOGICA AUTENTICAZIONE ---
-const AUTH_KEY = '@stockai_auth_user';
-
-export const loginUser = async (role) => {
-  try {
-    // Creiamo un utente fittizio basato sul pulsante premuto
-    const user = {
-      id: role === 'MANAGER' ? 'manager_1' : 'staff_1',
-      role: role, // 'MANAGER' o 'STAFF'
-      name: role === 'MANAGER' ? 'Gestore' : 'Cameriere',
-    };
-    await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(user));
-    return user;
+    return Object.values(ordersBySupplier);
   } catch (e) {
-    console.error('Errore durante il login', e);
+    console.error('Errore getDraftOrders', e);
+    return [];
   }
 };
 
-export const getAuthUser = async () => {
-  try {
-    const data = await AsyncStorage.getItem(AUTH_KEY);
-    return data ? JSON.parse(data) : null;
-  } catch (e) {
-    return null;
-  }
-};
-
-export const logoutUser = async () => {
-  try {
-    await AsyncStorage.removeItem(AUTH_KEY);
-  } catch (e) {
-    console.error('Errore durante il logout', e);
-  }
-};
-
-// --- LOGICA GESTIONE MAGAZZINO (ADMIN) ---
-
-export const addProduct = async (productData) => {
-  try {
-    const products = await getProducts();
-    // Il productData ora includerà { ...dati_base, category: '...', icon: '...' }
-    const newProduct = { 
-      ...productData, 
-      id: `PROD-${Date.now()}`, 
-      current_stock: 0 
-    };
-    products.push(newProduct);
-    await AsyncStorage.setItem(DB_KEY, JSON.stringify(products));
-    return products;
-  } catch (e) {
-    console.error('Errore aggiunta prodotto', e);
-  }
-};
-
-export const deleteProduct = async (productId) => {
-  try {
-    const products = await getProducts();
-    const updatedProducts = products.filter(p => p.id !== productId);
-    await AsyncStorage.setItem(DB_KEY, JSON.stringify(updatedProducts));
-    return updatedProducts;
-  } catch (e) {
-    console.error('Errore eliminazione prodotto', e);
-  }
-};
-
-export const updateProductDetails = async (productId, updatedData) => {
-  try {
-    const products = await getProducts();
-    const newProducts = products.map(p => 
-      p.id === productId ? { ...p, ...updatedData } : p
-    );
-    await AsyncStorage.setItem(DB_KEY, JSON.stringify(newProducts));
-    return newProducts;
-  } catch (e) {
-    console.error('Errore aggiornamento dettagli prodotto', e);
-  }
-};
-
-export const updateProductSupplier = async (productId, newSupplier) => {
-  try {
-    const products = await getProducts();
-    const updatedProducts = products.map(p => 
-      p.id === productId ? { ...p, supplier_id: newSupplier } : p
-    );
-    await AsyncStorage.setItem(DB_KEY, JSON.stringify(updatedProducts));
-    return updatedProducts;
-  } catch (e) {
-    console.error('Errore aggiornamento fornitore', e);
-  }
-};
-
-// --- LOGICA CHIAVE API GEMINI ---
+// --- LOGICA CHIAVE API GEMINI (rimane in locale) ---
 const API_KEY_STORAGE = '@stockai_custom_api_key';
 const API_MODEL_STORAGE = '@stockai_custom_api_model';
 
@@ -254,7 +354,7 @@ export const saveCustomApiKey = async (key) => {
       await AsyncStorage.removeItem(API_KEY_STORAGE);
     }
   } catch (e) {
-    console.error('Errore nel salvataggio dell\'API Key', e);
+    console.error('Errore salvataggio API Key', e);
   }
 };
 
@@ -274,95 +374,6 @@ export const saveCustomModel = async (model) => {
       await AsyncStorage.removeItem(API_MODEL_STORAGE);
     }
   } catch (e) {
-    console.error('Errore nel salvataggio del Modello API', e);
-  }
-};
-
-// --- LOGICA CATEGORIE E ICONE IA ---
-export const applyProductCategories = async (aiMapping) => {
-  try {
-    const products = await getProducts();
-    const updatedProducts = products.map(p => {
-      // Se Gemini ha restituito dati per questo prodotto
-      if (aiMapping[p.id]) {
-        return { 
-          ...p, 
-          category: aiMapping[p.id].category || p.category,
-          icon: aiMapping[p.id].icon || p.icon // Salva il nome dell'icona, se presente
-        };
-      }
-      return p;
-    });
-    await AsyncStorage.setItem(DB_KEY, JSON.stringify(updatedProducts));
-    return updatedProducts;
-  } catch (e) {
-    console.error('Errore applicazione categorie e icone', e);
-  }
-};
-
-export const completeTransitOrderWithScan = async (orderId, scannedItems, supplierName) => {
-  try {
-    // 1. Elimina l'ordine dalla lista dei transiti
-    const orders = await getTransitOrders();
-    const updatedOrders = orders.filter(o => o.id !== orderId);
-    await AsyncStorage.setItem(TRANSIT_ORDERS_KEY, JSON.stringify(updatedOrders));
-
-    // 2. Prepara l'aggiornamento prodotti
-    const products = await getProducts();
-    let newProductsToInsert = [];
-    
-    for (const item of scannedItems) {
-      if (item.isNew) {
-        // Se è nuovo, lo creiamo e assegnamo la giacenza iniziale pari a quanto consegnato
-        const newProd = {
-          id: `PROD-${Date.now()}-${Math.floor(Math.random()*10000)}`,
-          name: item.name,
-          supplier_id: supplierName,
-          unit: item.unit,
-          min_threshold: parseInt(item.minThreshold) || 5, // Dati scelti dall'utente
-          max_threshold: parseInt(item.maxThreshold) || 20,
-          current_stock: item.quantity,
-          category: item.category,
-          icon: item.icon
-        };
-        newProductsToInsert.push(newProd);
-      } else {
-        // Se esiste già, sommiamo la quantità
-        const idx = products.findIndex(p => p.id === item.id);
-        if (idx > -1) {
-          products[idx].current_stock += item.quantity;
-        }
-      }
-    }
-    
-    // 3. Salva tutto
-    const finalProducts = [...products, ...newProductsToInsert];
-    await AsyncStorage.setItem(DB_KEY, JSON.stringify(finalProducts));
-    
-  } catch(e) {
-    console.error('Errore completamento ordine con scansione', e);
-  }
-};
-
-// --- LOGICA ONBOARDING ---
-export const addMultipleProducts = async (newProductsArray) => {
-  try {
-    const products = await getProducts();
-    
-    const formattedProducts = newProductsArray.map((p, index) => ({
-      ...p,
-      id: `PROD-${Date.now()}-${index}`,
-      supplier_id: p.supplier_id || 'Fornitore Generico',
-      // Logica di fallback sicura
-      current_stock: Number(p.current_stock) || 0,
-      min_threshold: Number(p.min_threshold) || 5,
-      max_threshold: Number(p.max_threshold) || 20,
-    }));
-    
-    const updatedProducts = [...products, ...formattedProducts];
-    await AsyncStorage.setItem(DB_KEY, JSON.stringify(updatedProducts));
-    return updatedProducts;
-  } catch (e) {
-    console.error('Errore salvataggio massivo:', e);
+    console.error('Errore salvataggio Modello', e);
   }
 };

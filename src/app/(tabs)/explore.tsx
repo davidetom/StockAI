@@ -5,10 +5,10 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { useAuth } from '../../../auth';
 import { analyzeInventoryFile, categorizeSingleProduct, generateInventoryTemplate, scanOnboardingReceipt, scanShelfInventory } from '../../ai';
-import { addMultipleProducts, addProduct, deleteProduct, emptyWarehouse, getProducts, updateProductDetails, updateProductSupplier } from '../../db';
+import { addMultipleProducts, addProduct, deleteProduct, emptyWarehouse, getProducts, updateProductDetails, updateProductSupplier, getSuppliers, updateSupplier } from '../../db';
 
 const ICON_MAP: Record<string, any> = {
   'baby-care': require('../../../assets/icons/baby-care.png'),
@@ -34,6 +34,20 @@ const ICON_MAP: Record<string, any> = {
   'takeaway': require('../../../assets/icons/takeaway.png'),
 };
 
+const getProductStatus = (item: any) => {
+  if (item.current_stock === 0) return 'Non disp.';
+  if (item.current_stock <= item.min_threshold) return 'Critico';
+  if (item.current_stock <= item.min_threshold * 1.5) return 'In esaurim.';
+  return 'Sicuro';
+};
+
+const getStatusWeight = (status: string) => {
+  if (status === 'Non disp.') return 0;
+  if (status === 'Critico') return 1;
+  if (status === 'In esaurim.') return 2;
+  return 3;
+};
+
 export default function WarehouseScreen() {
   const { user, logout } = useAuth();
   const isManager = user?.role === 'MANAGER' || user?.role === 'PROPRIETARIO';
@@ -56,6 +70,7 @@ export default function WarehouseScreen() {
 
   const [selectedSupplierFilter, setSelectedSupplierFilter] = useState<string | null>(null);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(null);
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<string | null>(null);
 
   const [isAddModalVisible, setIsAddModalVisible] = useState(false);
   const [isSupplierModalVisible, setIsSupplierModalVisible] = useState(false);
@@ -65,17 +80,20 @@ export default function WarehouseScreen() {
   const [newSupplierName, setNewSupplierName] = useState('');
   const [newSupplierChannel, setNewSupplierChannel] = useState('WhatsApp');
   const [newSupplierPhone, setNewSupplierPhone] = useState('');
+  const [newSupplierEmail, setNewSupplierEmail] = useState('');
 
-  const [newProd, setNewProd] = useState({ name: '', min: '', max: '', unit: 'pz.', supplier: '', isNewSupplier: false, commChannel: 'WhatsApp', phone: '' });
+  const [newProd, setNewProd] = useState({ name: '', min: '', max: '', unit: 'pz.', supplier: '', isNewSupplier: false, commChannel: 'WhatsApp', phone: '', email: '' });
   const [editProdData, setEditProdData] = useState({ id: '', name: '', min: '', max: '', unit: '' });
 
   // Stato per canali di trasmissione
   const [supplierChannels, setSupplierChannels] = useState<Record<string, string>>({});
   const [supplierPhones, setSupplierPhones] = useState<Record<string, string>>({});
+  const [supplierEmails, setSupplierEmails] = useState<Record<string, string>>({});
   const [isChannelModalVisible, setIsChannelModalVisible] = useState(false);
   const [activeSupplierForChannel, setActiveSupplierForChannel] = useState('');
   const [modalChannel, setModalChannel] = useState('');
   const [modalPhone, setModalPhone] = useState('');
+  const [modalEmail, setModalEmail] = useState('');
   const AVAILABLE_CHANNELS = ['WhatsApp', 'Email', 'Telefono', 'App B2B', 'Rappresentante', 'Altro'];
 
   const mergeAndDeduplicateItems = (existingItems: any[], newItems: any[]) => {
@@ -93,14 +111,20 @@ export default function WarehouseScreen() {
     setProducts(data);
 
     try {
-      const channelsData = await AsyncStorage.getItem('@supplier_channels');
-      if (channelsData) {
-        setSupplierChannels(JSON.parse(channelsData));
-      }
-      const phonesData = await AsyncStorage.getItem('@supplier_phones');
-      if (phonesData) {
-        setSupplierPhones(JSON.parse(phonesData));
-      }
+      const suppliers = await getSuppliers();
+      const channels: Record<string, string> = {};
+      const phones: Record<string, string> = {};
+      const emails: Record<string, string> = {};
+
+      suppliers.forEach((s: any) => {
+        channels[s.name] = s.channel || 'WhatsApp';
+        if (s.phone) phones[s.name] = s.phone;
+        if (s.email) emails[s.name] = s.email;
+      });
+
+      setSupplierChannels(channels);
+      setSupplierPhones(phones);
+      setSupplierEmails(emails);
     } catch (e) {
       console.error('Errore nel caricamento canali', e);
     }
@@ -110,20 +134,15 @@ export default function WarehouseScreen() {
     setActiveSupplierForChannel(supplierName);
     setModalChannel(supplierChannels[supplierName] || 'WhatsApp');
     setModalPhone(supplierPhones[supplierName] || '');
+    setModalEmail(supplierEmails[supplierName] || '');
     setIsChannelModalVisible(true);
   };
 
   const handleSaveChannel = async () => {
-    const updatedChannels = { ...supplierChannels, [activeSupplierForChannel]: modalChannel };
-    setSupplierChannels(updatedChannels);
-    await AsyncStorage.setItem('@supplier_channels', JSON.stringify(updatedChannels));
-
-    if (modalChannel === 'Telefono') {
-      const updatedPhones = { ...supplierPhones, [activeSupplierForChannel]: modalPhone };
-      setSupplierPhones(updatedPhones);
-      await AsyncStorage.setItem('@supplier_phones', JSON.stringify(updatedPhones));
-    }
-
+    const finalPhone = (modalChannel === 'WhatsApp' || modalChannel === 'Telefono') ? modalPhone : '';
+    const finalEmail = (modalChannel === 'Email') ? modalEmail : '';
+    await updateSupplier(activeSupplierForChannel, modalChannel, finalPhone, finalEmail);
+    await loadData();
     setIsChannelModalVisible(false);
   };
 
@@ -311,13 +330,24 @@ export default function WarehouseScreen() {
   }, [products]);
 
   const filteredProducts = useMemo(() => {
-    return products.filter(p => {
+    let result = products.filter(p => {
+      const status = getProductStatus(p);
       const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.supplier_id.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesSupplier = selectedSupplierFilter ? p.supplier_id === selectedSupplierFilter : true;
       const matchesCategory = selectedCategoryFilter ? p.category === selectedCategoryFilter : true;
-      return matchesSearch && matchesSupplier && matchesCategory;
+      const matchesStatus = selectedStatusFilter ? status === selectedStatusFilter : true;
+      return matchesSearch && matchesSupplier && matchesCategory && matchesStatus;
     });
-  }, [products, searchQuery, selectedSupplierFilter, selectedCategoryFilter]);
+
+    result.sort((a, b) => {
+      const weightA = getStatusWeight(getProductStatus(a));
+      const weightB = getStatusWeight(getProductStatus(b));
+      if (weightA !== weightB) return weightA - weightB;
+      return a.name.localeCompare(b.name);
+    });
+
+    return result;
+  }, [products, searchQuery, selectedSupplierFilter, selectedCategoryFilter, selectedStatusFilter]);
 
   const handleMenuAction = (action: 'edit' | 'suppliers' | 'products') => {
     setIsMenuOpen(false);
@@ -376,16 +406,11 @@ export default function WarehouseScreen() {
       return;
     }
 
-    if (newProd.isNewSupplier && newProd.commChannel) {
-      const updatedChannels = { ...supplierChannels, [newProd.supplier]: newProd.commChannel };
-      setSupplierChannels(updatedChannels);
-      await AsyncStorage.setItem('@supplier_channels', JSON.stringify(updatedChannels));
-
-      if (newProd.commChannel === 'Telefono') {
-        const updatedPhones = { ...supplierPhones, [newProd.supplier]: newProd.phone };
-        setSupplierPhones(updatedPhones);
-        await AsyncStorage.setItem('@supplier_phones', JSON.stringify(updatedPhones));
-      }
+    if (newProd.isNewSupplier && newProd.supplier) {
+      const finalPhone = (newProd.commChannel === 'WhatsApp' || newProd.commChannel === 'Telefono') ? newProd.phone : '';
+      const finalEmail = (newProd.commChannel === 'Email') ? newProd.email : '';
+      await updateSupplier(newProd.supplier, newProd.commChannel, finalPhone, finalEmail);
+      setNewProd({ name: '', min: '', max: '', unit: 'pz.', supplier: '', isNewSupplier: false, commChannel: 'WhatsApp', phone: '', email: '' });
     }
 
     setIsUpdatingCategories(true);
@@ -402,7 +427,7 @@ export default function WarehouseScreen() {
     });
 
     setIsAddModalVisible(false);
-    setNewProd({ name: '', min: '', max: '', unit: 'pz.', supplier: '', isNewSupplier: false, commChannel: 'WhatsApp', phone: '' });
+    setNewProd({ name: '', min: '', max: '', unit: 'pz.', supplier: '', isNewSupplier: false, commChannel: 'WhatsApp', phone: '', email: '' });
     await loadData();
     setIsUpdatingCategories(false);
   };
@@ -411,19 +436,12 @@ export default function WarehouseScreen() {
     Keyboard.dismiss();
     if (activeProductId && newSupplierName) {
       await updateProductSupplier(activeProductId, newSupplierName);
-
-      const updatedChannels = { ...supplierChannels, [newSupplierName]: newSupplierChannel };
-      setSupplierChannels(updatedChannels);
-      await AsyncStorage.setItem('@supplier_channels', JSON.stringify(updatedChannels));
-
-      if (newSupplierChannel === 'Telefono') {
-        const updatedPhones = { ...supplierPhones, [newSupplierName]: newSupplierPhone };
-        setSupplierPhones(updatedPhones);
-        await AsyncStorage.setItem('@supplier_phones', JSON.stringify(updatedPhones));
-      }
+      const finalPhone = (newSupplierChannel === 'WhatsApp' || newSupplierChannel === 'Telefono') ? newSupplierPhone : '';
+      const finalEmail = (newSupplierChannel === 'Email') ? newSupplierEmail : '';
+      await updateSupplier(newSupplierName, newSupplierChannel, finalPhone, finalEmail);
+      await loadData();
 
       setIsSupplierModalVisible(false);
-      loadData();
     }
   };
 
@@ -665,13 +683,28 @@ export default function WarehouseScreen() {
               <View style={styles.categoriesWrapper}>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesScroll}>
                   <TouchableOpacity style={[styles.categoryChip, !selectedCategoryFilter && styles.categoryChipActive]} onPress={() => setSelectedCategoryFilter(null)}>
-                    <Text style={{ color: !selectedCategoryFilter ? '#FFF' : '#333' }}>Tutti</Text>
+                    <Text style={{ color: !selectedCategoryFilter ? '#FFF' : '#333' }}>Tutte</Text>
                   </TouchableOpacity>
                   {uniqueCategories.map(cat => (
                     <TouchableOpacity key={cat} style={[styles.categoryChip, selectedCategoryFilter === cat && styles.categoryChipActive]} onPress={() => setSelectedCategoryFilter(cat)}>
                       <Text style={{ color: selectedCategoryFilter === cat ? '#FFF' : '#333' }}>{cat}</Text>
                     </TouchableOpacity>
                   ))}
+                </ScrollView>
+              </View>
+              <View style={[styles.categoriesWrapper, { borderTopWidth: 0 }]}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesScroll}>
+                  <TouchableOpacity style={[styles.categoryChip, !selectedStatusFilter && styles.categoryChipActive]} onPress={() => setSelectedStatusFilter(null)}>
+                    <Text style={{ color: !selectedStatusFilter ? '#FFF' : '#333' }}>Tutti</Text>
+                  </TouchableOpacity>
+                  {['Esaurito', 'Critico', 'In esaurim.', 'Sicuro'].map(status => {
+                    const statusLabel = status === 'Esaurito' ? 'Non disp.' : status;
+                    return (
+                      <TouchableOpacity key={status} style={[styles.categoryChip, selectedStatusFilter === statusLabel && styles.categoryChipActive]} onPress={() => setSelectedStatusFilter(statusLabel)}>
+                        <Text style={{ color: selectedStatusFilter === statusLabel ? '#FFF' : '#333' }}>{status}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </ScrollView>
               </View>
             </>
@@ -779,14 +812,15 @@ export default function WarehouseScreen() {
       {/* --- MODALE AGGIUNGI PRODOTTO --- */}
       <Modal visible={isAddModalVisible} animationType="slide" presentationStyle="pageSheet">
         <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setIsAddModalVisible(false)}><Ionicons name="close" size={28} color="#000" /></TouchableOpacity>
-            <Text style={styles.headerTitle}>Nuovo Prodotto</Text>
-            <View style={{ width: 28 }} />
-          </View>
-          <ScrollView contentContainerStyle={styles.modalBody}>
-            <Text style={styles.label}>Nome Prodotto</Text>
-            <TextInput style={styles.input} value={newProd.name} onChangeText={(t) => setNewProd({ ...newProd, name: t })} />
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => setIsAddModalVisible(false)}><Ionicons name="close" size={28} color="#000" /></TouchableOpacity>
+              <Text style={styles.headerTitle}>Nuovo Prodotto</Text>
+              <View style={{ width: 28 }} />
+            </View>
+            <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
+              <Text style={styles.label}>Nome Prodotto</Text>
+              <TextInput style={styles.input} value={newProd.name} onChangeText={(t) => setNewProd({ ...newProd, name: t })} returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} />
 
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <View style={{ flex: 1 }}>
@@ -824,7 +858,19 @@ export default function WarehouseScreen() {
                 {newProd.commChannel === 'Telefono' && (
                   <View style={{marginBottom: 16}}>
                     <Text style={[styles.label, {marginTop: 0}]}>Numero di Telefono</Text>
-                    <TextInput style={styles.input} placeholder="+39 333 1234567" keyboardType="phone-pad" value={newProd.phone} onChangeText={(t) => setNewProd({...newProd, phone: t})} />
+                    <TextInput style={styles.input} placeholder="+39 333 1234567" keyboardType="phone-pad" value={newProd.phone} onChangeText={(t) => setNewProd({...newProd, phone: t})} returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} />
+                  </View>
+                )}
+                {newProd.commChannel === 'WhatsApp' && (
+                  <View style={{marginBottom: 16}}>
+                    <Text style={[styles.label, {marginTop: 0}]}>Numero WhatsApp</Text>
+                    <TextInput style={styles.input} placeholder="+39 333 1234567" keyboardType="phone-pad" value={newProd.phone} onChangeText={(t) => setNewProd({...newProd, phone: t})} returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} />
+                  </View>
+                )}
+                {newProd.commChannel === 'Email' && (
+                  <View style={{marginBottom: 16}}>
+                    <Text style={[styles.label, {marginTop: 0}]}>Indirizzo Email</Text>
+                    <TextInput style={styles.input} placeholder="fornitore@mail.com" keyboardType="email-address" autoCapitalize="none" value={newProd.email} onChangeText={(t) => setNewProd({...newProd, email: t})} returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} />
                   </View>
                 )}
               </>
@@ -842,18 +888,20 @@ export default function WarehouseScreen() {
               {isUpdatingCategories ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16 }}>Salva e Analizza (AI)</Text>}
             </TouchableOpacity>
           </ScrollView>
+          </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
 
       {/* --- MODALE MODIFICA DETTAGLI --- */}
       <Modal visible={isEditProductModalVisible} animationType="slide" presentationStyle="pageSheet">
         <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setIsEditProductModalVisible(false)}><Ionicons name="close" size={28} color="#000" /></TouchableOpacity>
-            <Text style={styles.headerTitle}>Modifica Dettagli</Text>
-            <View style={{ width: 28 }} />
-          </View>
-          <ScrollView contentContainerStyle={styles.modalBody}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => setIsEditProductModalVisible(false)}><Ionicons name="close" size={28} color="#000" /></TouchableOpacity>
+              <Text style={styles.headerTitle}>Modifica Dettagli</Text>
+              <View style={{ width: 28 }} />
+            </View>
+            <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
             <Text style={styles.label}>Nome Prodotto</Text>
             <TextInput style={styles.input} value={editProdData.name} onChangeText={(t) => setEditProdData({ ...editProdData, name: t })} />
 
@@ -875,26 +923,29 @@ export default function WarehouseScreen() {
               <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16 }}>Salva Modifiche</Text>
             </TouchableOpacity>
           </ScrollView>
+          </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
 
       {/* --- MODALE CAMBIA FORNITORE --- */}
       <Modal visible={isSupplierModalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSmallBox}>
-            <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 16 }}>Modifica Fornitore</Text>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <TouchableOpacity activeOpacity={1} style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }} onPress={() => Keyboard.dismiss()}>
+            <TouchableWithoutFeedback>
+              <View style={styles.modalSmallBox}>
+                <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 16 }}>Modifica Fornitore</Text>
 
             <Text style={[styles.label, { alignSelf: 'flex-start', marginTop: 0 }]}>Scegli esistente:</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ width: '100%', maxHeight: 45, marginBottom: 16 }}>
               {uniqueSuppliers.map(s => (
-                <TouchableOpacity key={s.name} style={[styles.supplierChip, newSupplierName === s.name && styles.supplierChipActive]} onPress={() => { setNewSupplierName(s.name); setNewSupplierChannel(supplierChannels[s.name] || 'WhatsApp'); setNewSupplierPhone(supplierPhones[s.name] || ''); }}>
+                <TouchableOpacity key={s.name} style={[styles.supplierChip, newSupplierName === s.name && styles.supplierChipActive]} onPress={() => { setNewSupplierName(s.name); setNewSupplierChannel(supplierChannels[s.name] || 'WhatsApp'); setNewSupplierPhone(supplierPhones[s.name] || ''); setNewSupplierEmail(supplierEmails[s.name] || ''); }}>
                   <Text style={{ color: newSupplierName === s.name ? '#0052FF' : '#666' }}>{s.name}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
 
             <Text style={[styles.label, { alignSelf: 'flex-start' }]}>Oppure scrivi un nome:</Text>
-            <TextInput style={[styles.input, { width: '100%' }]} value={newSupplierName} onChangeText={setNewSupplierName} placeholder="Nome fornitore" />
+            <TextInput style={[styles.input, { width: '100%' }]} value={newSupplierName} onChangeText={setNewSupplierName} placeholder="Nome fornitore" returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} />
 
             <Text style={[styles.label, { alignSelf: 'flex-start', marginTop: 8 }]}>Canale di trasmissione:</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ width: '100%', maxHeight: 45, marginBottom: 16 }}>
@@ -905,10 +956,17 @@ export default function WarehouseScreen() {
               ))}
             </ScrollView>
             
-            {newSupplierChannel === 'Telefono' && (
+            {(newSupplierChannel === 'Telefono' || newSupplierChannel === 'WhatsApp') && (
                <View style={{width: '100%'}}>
-                 <Text style={[styles.label, { alignSelf: 'flex-start', marginTop: 0 }]}>Numero di Telefono:</Text>
-                 <TextInput style={[styles.input, {width: '100%'}]} placeholder="+39 333 1234567" keyboardType="phone-pad" value={newSupplierPhone} onChangeText={setNewSupplierPhone} />
+                 <Text style={[styles.label, { alignSelf: 'flex-start', marginTop: 0 }]}>Numero {newSupplierChannel}:</Text>
+                 <TextInput style={[styles.input, {width: '100%'}]} placeholder="+39 333 1234567" keyboardType="phone-pad" value={newSupplierPhone} onChangeText={setNewSupplierPhone} returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} />
+               </View>
+            )}
+
+            {newSupplierChannel === 'Email' && (
+               <View style={{width: '100%'}}>
+                 <Text style={[styles.label, { alignSelf: 'flex-start', marginTop: 0 }]}>Indirizzo Email:</Text>
+                 <TextInput style={[styles.input, {width: '100%'}]} placeholder="fornitore@mail.com" keyboardType="email-address" autoCapitalize="none" value={newSupplierEmail} onChangeText={setNewSupplierEmail} returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} />
                </View>
             )}
 
@@ -917,69 +975,88 @@ export default function WarehouseScreen() {
               <TouchableOpacity style={[styles.btnPrimaryFull, { flex: 1, marginTop: 0 }]} onPress={handleUpdateSupplier}><Text style={{ color: '#FFF' }}>Salva</Text></TouchableOpacity>
             </View>
           </View>
-        </View>
+          </TouchableWithoutFeedback>
+        </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* --- MODALE CAMBIA CANALE TRASMISSIONE --- */}
       <Modal visible={isChannelModalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSmallBox}>
-            <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 16, textAlign: 'center' }}>
-              Mezzo di trasmissione
-            </Text>
-            <Text style={{ fontSize: 14, color: '#666', marginBottom: 16, textAlign: 'center' }}>
-              Seleziona il canale predefinito per comunicare con: {activeSupplierForChannel}
-            </Text>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <TouchableOpacity activeOpacity={1} style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }} onPress={() => Keyboard.dismiss()}>
+            <TouchableWithoutFeedback>
+              <View style={styles.modalSmallBox}>
+                <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 16, textAlign: 'center' }}>
+                  Mezzo di trasmissione
+                </Text>
+              <Text style={{ fontSize: 14, color: '#666', marginBottom: 16, textAlign: 'center' }}>
+                Seleziona il canale predefinito per comunicare con: {activeSupplierForChannel}
+              </Text>
 
-            <ScrollView style={{ width: '100%', maxHeight: 300, marginBottom: 16 }}>
-              {AVAILABLE_CHANNELS.map(ch => {
-                const isSelected = modalChannel === ch;
-                return (
-                  <View key={ch}>
-                    <TouchableOpacity
-                      style={{
-                        padding: 16,
-                        borderRadius: 8,
-                        borderWidth: 1,
-                        borderColor: isSelected ? '#0052FF' : '#EAEAEA',
-                        backgroundColor: isSelected ? '#F0F4FF' : '#FFF',
-                        marginBottom: isSelected && ch === 'Telefono' ? 0 : 8,
-                        borderBottomLeftRadius: isSelected && ch === 'Telefono' ? 0 : 8,
-                        borderBottomRightRadius: isSelected && ch === 'Telefono' ? 0 : 8,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                      }}
-                      onPress={() => setModalChannel(ch)}
-                    >
-                      <Text style={{ color: isSelected ? '#0052FF' : '#333', fontWeight: isSelected ? 'bold' : 'normal' }}>{ch}</Text>
-                      {isSelected && <Ionicons name="checkmark-circle" size={20} color="#0052FF" />}
-                    </TouchableOpacity>
-                    {isSelected && ch === 'Telefono' && (
-                      <View style={{ backgroundColor: '#F0F4FF', padding: 16, borderBottomLeftRadius: 8, borderBottomRightRadius: 8, marginBottom: 8, borderWidth: 1, borderTopWidth: 0, borderColor: '#0052FF' }}>
-                        <Text style={[styles.label, {marginTop: 0}]}>Numero di Telefono:</Text>
-                        <TextInput 
-                          style={styles.input} 
-                          placeholder="+39 333 1234567" 
-                          keyboardType="phone-pad"
-                          value={modalPhone}
-                          onChangeText={setModalPhone}
-                        />
-                      </View>
-                    )}
-                  </View>
-                );
-              })}
-            </ScrollView>
+              <ScrollView style={{ width: '100%', maxHeight: 300, marginBottom: 16 }}>
+                {AVAILABLE_CHANNELS.map(ch => {
+                  const isSelected = modalChannel === ch;
+                  return (
+                    <View key={ch}>
+                      <TouchableOpacity
+                        style={{
+                          padding: 16,
+                          borderRadius: 8,
+                          borderWidth: 1,
+                          borderColor: isSelected ? '#0052FF' : '#EAEAEA',
+                          backgroundColor: isSelected ? '#F0F4FF' : '#FFF',
+                          marginBottom: isSelected && ch === 'Telefono' ? 0 : 8,
+                          borderBottomLeftRadius: isSelected && ch === 'Telefono' ? 0 : 8,
+                          borderBottomRightRadius: isSelected && ch === 'Telefono' ? 0 : 8,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between'
+                        }}
+                        onPress={() => setModalChannel(ch)}
+                      >
+                        <Text style={{ color: isSelected ? '#0052FF' : '#333', fontWeight: isSelected ? 'bold' : 'normal' }}>{ch}</Text>
+                        {isSelected && <Ionicons name="checkmark-circle" size={20} color="#0052FF" />}
+                      </TouchableOpacity>
+                      {isSelected && (ch === 'Telefono' || ch === 'WhatsApp') && (
+                        <View style={{ backgroundColor: '#F0F4FF', padding: 16, borderBottomLeftRadius: 8, borderBottomRightRadius: 8, marginBottom: 8, borderWidth: 1, borderTopWidth: 0, borderColor: '#0052FF' }}>
+                          <Text style={[styles.label, {marginTop: 0}]}>Numero di {ch}:</Text>
+                          <TextInput 
+                            style={styles.input} 
+                            placeholder="+39 333 1234567" 
+                            keyboardType="phone-pad"
+                            value={modalPhone}
+                            onChangeText={setModalPhone}
+                          />
+                        </View>
+                      )}
+                      {isSelected && ch === 'Email' && (
+                        <View style={{ backgroundColor: '#F0F4FF', padding: 16, borderBottomLeftRadius: 8, borderBottomRightRadius: 8, marginBottom: 8, borderWidth: 1, borderTopWidth: 0, borderColor: '#0052FF' }}>
+                          <Text style={[styles.label, {marginTop: 0}]}>Indirizzo Email:</Text>
+                          <TextInput 
+                            style={styles.input} 
+                            placeholder="fornitore@mail.com" 
+                            keyboardType="email-address"
+                            autoCapitalize="none"
+                            value={modalEmail}
+                            onChangeText={setModalEmail}
+                          />
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </ScrollView>
 
-            <TouchableOpacity style={[styles.btnPrimaryFull, { width: '100%', marginTop: 0, marginBottom: 12 }]} onPress={handleSaveChannel}>
-              <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Salva Preferenza</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.btnOutline, { width: '100%' }]} onPress={() => setIsChannelModalVisible(false)}>
-              <Text>Annulla</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+              <TouchableOpacity style={[styles.btnPrimaryFull, { width: '100%', marginTop: 0, marginBottom: 12 }]} onPress={handleSaveChannel}>
+                <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Salva Preferenza</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.btnOutline, { width: '100%' }]} onPress={() => setIsChannelModalVisible(false)}>
+                <Text>Annulla</Text>
+              </TouchableOpacity>
+            </View>
+            </TouchableWithoutFeedback>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
     </SafeAreaView>
