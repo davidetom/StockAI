@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/icon.png",
-      "bundleIdentifier": "com.anonymous.stockai"
+      "bundleIdentifier": "com.davidetommasino.stockai"
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +19,7 @@
         "monochromeImage": "./assets/icon.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.stockai"
+      "package": "com.davidetommasino.stockai"
     },
     "web": {
       "output": "static",
