@@ -57,7 +57,7 @@ export const deleteSupplierIfEmpty = async (supplierName) => {
   try {
     if (!supplierName) return;
     const locale_id = await getLocaleId();
-    
+
     // Check if there are any products left for this supplier in this locale
     const { data, error: selectError } = await supabase.from('products')
       .select('id')
@@ -75,7 +75,7 @@ export const deleteSupplierIfEmpty = async (supplierName) => {
         .delete()
         .eq('name', supplierName)
         .eq('locale_id', locale_id);
-      
+
       if (deleteError) {
         console.error('Errore delete fornitore:', deleteError);
       }
@@ -100,8 +100,8 @@ export const getProducts = async () => {
 export const addProduct = async (productData) => {
   try {
     const locale_id = await getLocaleId();
-    const newProduct = { 
-      ...productData, 
+    const newProduct = {
+      ...productData,
       locale_id,
       current_stock: productData.current_stock || 0
     };
@@ -223,7 +223,7 @@ export const getTransitOrders = async () => {
 export const addTransitOrder = async (order) => {
   try {
     const locale_id = await getLocaleId();
-    const newOrder = { 
+    const newOrder = {
       locale_id,
       supplier_name: order.supplierName || order.supplier,
       status: 'In Transito',
@@ -245,8 +245,8 @@ export const completeTransitOrder = async (orderId, items) => {
     for (const item of items) {
       const { data: product } = await supabase.from('products').select('current_stock').eq('id', item.id).single();
       if (product) {
-        await supabase.from('products').update({ 
-          current_stock: Number(product.current_stock) + Number(item.orderQuantity) 
+        await supabase.from('products').update({
+          current_stock: Number(product.current_stock) + Number(item.orderQuantity)
         }).eq('id', item.id);
       }
     }
@@ -277,8 +277,8 @@ export const completeTransitOrderWithScan = async (orderId, scannedItems, suppli
       } else {
         const { data: product } = await supabase.from('products').select('current_stock').eq('id', item.id).single();
         if (product) {
-          await supabase.from('products').update({ 
-            current_stock: Number(product.current_stock) + Number(item.quantity) 
+          await supabase.from('products').update({
+            current_stock: Number(product.current_stock) + Number(item.quantity)
           }).eq('id', item.id);
         }
       }
@@ -293,7 +293,7 @@ export const getDraftOrders = async () => {
   try {
     const products = await getProducts();
     const transitOrders = await getTransitOrders();
-    
+
     const productsInTransit = new Set();
     transitOrders.forEach(order => {
       (order.items || []).forEach(item => productsInTransit.add(item.id));
@@ -311,7 +311,7 @@ export const getDraftOrders = async () => {
           const day = String(today.getDate()).padStart(2, '0');
           const month = String(today.getMonth() + 1).padStart(2, '0');
           const year = today.getFullYear();
-          
+
           ordersBySupplier[p.supplier_id] = {
             id: `ORD-${day}-${month}-${year}-${stableNum}`,
             supplierName: p.supplier_id,

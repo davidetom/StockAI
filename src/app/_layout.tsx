@@ -34,7 +34,7 @@ function RootLayoutNav() {
     return (
       <SafeAreaView style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8F9FA' }}>
         <View style={{ padding: 24, alignItems: 'center' }}>
-          <Ionicons name="time-outline" size={80} color="#0052FF" />
+          <Ionicons name="time-outline" size={80} color="#0190A0" />
           <Text style={{ fontSize: 24, fontWeight: 'bold', marginTop: 16, textAlign: 'center', color: '#111' }}>In Attesa di Approvazione</Text>
           <Text style={{ textAlign: 'center', color: '#666', marginTop: 12, fontSize: 16 }}>
             Il proprietario del locale deve approvare la tua richiesta prima che tu possa accedere al magazzino.

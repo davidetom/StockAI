@@ -152,7 +152,7 @@ export default function SettingsScreen() {
           <View style={styles.card}>
             <View style={styles.infoRow}>
               <View style={styles.iconContainer}>
-                <Ionicons name="person-circle-outline" size={24} color="#0B132B" />
+                <Ionicons name="person-circle-outline" size={24} color="#0190A0" />
               </View>
               <View style={styles.textContainer}>
                 <Text style={styles.infoLabel}>Email</Text>
@@ -164,11 +164,11 @@ export default function SettingsScreen() {
 
             <View style={styles.infoRow}>
               <View style={styles.iconContainer}>
-                <Ionicons name="shield-outline" size={22} color="#0B132B" />
+                <Ionicons name="shield-outline" size={22} color="#0190A0" />
               </View>
               <View style={styles.textContainer}>
                 <Text style={styles.infoLabel}>Ruolo Permessi</Text>
-                <Text style={[styles.infoValue, { fontWeight: 'bold', color: user?.role === 'PROPRIETARIO' ? '#D93025' : user?.role === 'MANAGER' ? '#0052FF' : '#666' }]}>
+                <Text style={[styles.infoValue, { fontWeight: 'bold', color: user?.role === 'PROPRIETARIO' ? '#D93025' : user?.role === 'MANAGER' ? '#0190A0' : '#666' }]}>
                   {user?.role === 'PROPRIETARIO' ? 'PROPRIETARIO (Admin)' : user?.role === 'MANAGER' ? 'GESTORE (Pieno Controllo)' : 'STAFF (Solo Operazioni)'}
                 </Text>
               </View>
@@ -217,12 +217,12 @@ export default function SettingsScreen() {
                       <TouchableOpacity style={styles.staffRow} onPress={() => handleChangeRole(member)}>
                         <View style={styles.textContainer}>
                           <Text style={styles.infoValue}>{member.email || member.id} {member.id === user.id && '(Tu)'}</Text>
-                          <Text style={[styles.infoLabel, { color: member.role === 'PROPRIETARIO' ? '#D93025' : member.role === 'MANAGER' ? '#0052FF' : '#888' }]}>
+                          <Text style={[styles.infoLabel, { color: member.role === 'PROPRIETARIO' ? '#D93025' : member.role === 'MANAGER' ? '#0190A0' : '#888' }]}>
                             {member.role}
                           </Text>
                         </View>
                         {member.id !== user.id && (
-                          <Ionicons name="create-outline" size={20} color="#0052FF" />
+                          <Ionicons name="create-outline" size={20} color="#0190A0" />
                         )}
                       </TouchableOpacity>
                       {index < activeStaff.length - 1 && <View style={styles.separator} />}
@@ -240,7 +240,7 @@ export default function SettingsScreen() {
               <Text style={styles.toggleSubtitle}>Gestisci manualmente i parametri dell'IA ed i token</Text>
             </View>
             <Switch
-              trackColor={{ false: '#767577', true: '#0052FF' }}
+              trackColor={{ false: '#767577', true: '#0190A0' }}
               thumbColor={isDebugOpen ? '#FFFFFF' : '#f4f3f4'}
               ios_backgroundColor="#3e3e3e"
               onValueChange={setIsDebugOpen}
@@ -252,7 +252,7 @@ export default function SettingsScreen() {
           {isDebugOpen && (
             <View style={styles.advancedBox}>
               <View style={styles.advancedHeader}>
-                <Ionicons name="code-working-outline" size={20} color="#0052FF" style={{ marginRight: 6 }} />
+                <Ionicons name="code-working-outline" size={20} color="#0190A0" style={{ marginRight: 6 }} />
                 <Text style={styles.advancedTitle}>Configurazione Gemini AI</Text>
               </View>
 
@@ -317,7 +317,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#F8F9FA' },
   header: { padding: 20, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderColor: '#eee' },
   headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#000' },
-  headerSubtitle: { fontSize: 14, color: '#0052FF', marginTop: 4, fontWeight: '600' },
+  headerSubtitle: { fontSize: 14, color: '#0190A0', marginTop: 4, fontWeight: '600' },
   container: { padding: 16, paddingBottom: 40 },
 
   sectionTitle: { fontSize: 12, fontWeight: '700', color: '#8E8E93', letterSpacing: 1, marginBottom: 8, marginLeft: 4, marginTop: 10 },
@@ -331,7 +331,7 @@ const styles = StyleSheet.create({
   infoValue: { fontSize: 15, color: '#111', fontWeight: '500' },
   separator: { height: 1, backgroundColor: '#F2F2F7' },
 
-  btnApprove: { backgroundColor: '#0052FF', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6 },
+  btnApprove: { backgroundColor: '#0190A0', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6 },
   btnReject: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#D93025', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6 },
 
   toggleCard: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16 },
@@ -339,22 +339,22 @@ const styles = StyleSheet.create({
   toggleSubtitle: { fontSize: 12, color: '#888' },
 
   /* Box Avanzate / Debug */
-  advancedBox: { backgroundColor: '#FFF', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#0052FF', borderStyle: 'solid', marginBottom: 20 },
+  advancedBox: { backgroundColor: '#FFF', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#0190A0', borderStyle: 'solid', marginBottom: 20 },
   advancedHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  advancedTitle: { fontSize: 16, fontWeight: 'bold', color: '#0052FF' },
+  advancedTitle: { fontSize: 16, fontWeight: 'bold', color: '#0190A0' },
   apiKeyLabel: { fontSize: 13, color: '#333', marginBottom: 16 },
-  apiKeyHighlight: { fontWeight: 'bold', color: '#0B132B', backgroundColor: '#F0F2F5', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  apiKeyHighlight: { fontWeight: 'bold', color: '#0190A0', backgroundColor: '#F0F2F5', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   inputLabel: { fontSize: 13, fontWeight: '600', color: '#666', marginBottom: 6 },
   input: { backgroundColor: '#F8F9FA', borderWidth: 1, borderColor: '#EAEAEA', borderRadius: 8, padding: 12, fontSize: 14, color: '#111', marginBottom: 16 },
   
   chipsContainer: { paddingBottom: 8, gap: 8, marginBottom: 16 },
   chip: { backgroundColor: '#F0F2F5', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: '#EAEAEA' },
-  chipActive: { backgroundColor: '#0052FF', borderColor: '#0052FF' },
+  chipActive: { backgroundColor: '#0190A0', borderColor: '#0190A0' },
   chipText: { fontSize: 13, color: '#333', fontWeight: '500' },
   chipTextActive: { color: '#FFF' },
 
   actionsRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
-  btnSave: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0052FF', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8 },
+  btnSave: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0190A0', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8 },
   btnSaveText: { color: '#FFF', fontWeight: '600', fontSize: 14 },
   btnReset: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, borderWidth: 1, borderColor: '#D93025' },
   btnResetText: { color: '#D93025', fontWeight: '600', fontSize: 14 },

@@ -271,9 +271,9 @@ export default function OrdersScreen() {
                 <Ionicons name="pencil" size={16} color="#FFF" style={{marginRight: 4}} />
                 <Text style={styles.btnPrimaryText}>Modifica</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.btnDark} onPress={() => { setActiveOrder(item); setPreviewModalVisible(true); }}>
+              <TouchableOpacity style={[styles.btnPrimary, {backgroundColor: '#1E8E3E'}]} onPress={() => { setActiveOrder(item); setPreviewModalVisible(true); }}>
                 <Ionicons name="paper-plane-outline" size={16} color="#FFF" style={{marginRight: 4}} />
-                <Text style={styles.btnDarkText}>Vedi</Text>
+                <Text style={styles.btnPrimaryText}>Invia</Text>
               </TouchableOpacity>
             </>
           )}
@@ -287,7 +287,7 @@ export default function OrdersScreen() {
           
           {isManager && (
             <>
-              <TouchableOpacity style={[styles.btnDark, {backgroundColor: '#1C2541'}]} onPress={() => handleScanBolla(item)}>
+              <TouchableOpacity style={[styles.btnDark, {backgroundColor: '#0190A0'}]} onPress={() => handleScanBolla(item)}>
                 <Ionicons name="camera-outline" size={16} color="#FFF" style={{marginRight: 4}} />
                 <Text style={styles.btnDarkText}>Bolla</Text>
               </TouchableOpacity>
@@ -355,7 +355,7 @@ export default function OrdersScreen() {
                 <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
                   <View style={{flex: 1, paddingRight: 10}}>
                     <Text style={{fontWeight: 'bold', fontSize: 16, color: '#111'}}>{item.name}</Text>
-                    {item.isNew && <Text style={{color: '#0052FF', fontSize: 12, fontWeight: '600', marginTop: 2}}>✨ Nuovo • {item.category || 'Generico'}</Text>}
+                    {item.isNew && <Text style={{color: '#0190A0', fontSize: 12, fontWeight: '600', marginTop: 2}}>✨ Nuovo • {item.category || 'Generico'}</Text>}
                   </View>
                   
                   {/* EDIT QUANTITÀ DIRETTO */}
@@ -423,7 +423,7 @@ export default function OrdersScreen() {
             ))}
             {!isAddingProduct ? (
               <TouchableOpacity style={styles.btnAddProduct} onPress={() => setIsAddingProduct(true)}>
-                <Ionicons name="add-outline" size={20} color="#0052FF" />
+                <Ionicons name="add-outline" size={20} color="#0190A0" />
                 <Text style={styles.btnAddProductText}>Aggiungi prodotto</Text>
               </TouchableOpacity>
             ) : (
@@ -433,7 +433,7 @@ export default function OrdersScreen() {
                   availableToAdd.map((p, idx) => (
                     <TouchableOpacity key={idx} style={styles.addProductItem} onPress={() => addEditItem(p)}>
                       <Text>{p.name}</Text>
-                      <Ionicons name="add-circle-outline" size={24} color="#0052FF" />
+                      <Ionicons name="add-circle-outline" size={24} color="#0190A0" />
                     </TouchableOpacity>
                   ))
                 ) : (
@@ -518,9 +518,9 @@ const styles = StyleSheet.create({
   
   segmentContainer: { flexDirection: 'row', backgroundColor: '#FFF', borderBottomWidth: 1, borderColor: '#eee' },
   segmentBtn: { flex: 1, paddingVertical: 14, alignItems: 'center', borderBottomWidth: 2, borderColor: 'transparent' },
-  segmentActive: { borderColor: '#0052FF' },
+  segmentActive: { borderColor: '#0190A0' },
   segmentText: { fontWeight: '600', color: '#8E8E93' },
-  segmentTextActive: { color: '#0052FF' },
+  segmentTextActive: { color: '#0190A0' },
 
   listContainer: { padding: 16 },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -544,9 +544,9 @@ const styles = StyleSheet.create({
   actionsRow: { flexDirection: 'row', gap: 8 },
   btnOutline: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: '#CCC' },
   btnOutlineText: { fontWeight: '600', color: '#333' },
-  btnPrimary: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 8, backgroundColor: '#0052FF' },
+  btnPrimary: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 8, backgroundColor: '#0190A0' },
   btnPrimaryText: { fontWeight: '600', color: '#FFF' },
-  btnDark: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 8, backgroundColor: '#0B132B' },
+  btnDark: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 8, backgroundColor: '#0190A0' },
   btnDarkText: { fontWeight: '600', color: '#FFF' },
 
   toastContainer: { position: 'absolute', bottom: 20, alignSelf: 'center', backgroundColor: '#333', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 24, elevation: 5 },
@@ -561,7 +561,7 @@ const styles = StyleSheet.create({
   
   /* Stili Scansione Bolla */
   scannedItemBox: { backgroundColor: '#FFF', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#EAEAEA', marginBottom: 12 },
-  scannedItemBoxNew: { borderColor: '#0052FF', backgroundColor: '#F0F4FF' },
+  scannedItemBoxNew: { borderColor: '#0190A0', backgroundColor: '#F0F4FF' },
   smallInput: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#CCC', padding: 10, borderRadius: 8, fontSize: 14 },
 
   editItemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#FFF', padding: 16, marginBottom: 8, borderRadius: 8, borderWidth: 1, borderColor: '#eee' },
@@ -574,8 +574,8 @@ const styles = StyleSheet.create({
   editUnit: { marginLeft: 8, color: '#666', width: 45 },
   removeBtn: { padding: 8, marginLeft: 4 },
 
-  btnAddProduct: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, marginTop: 8, borderStyle: 'dashed', borderWidth: 1, borderColor: '#0052FF', borderRadius: 8 },
-  btnAddProductText: { color: '#0052FF', fontWeight: '600', marginLeft: 8 },
+  btnAddProduct: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, marginTop: 8, borderStyle: 'dashed', borderWidth: 1, borderColor: '#0190A0', borderRadius: 8 },
+  btnAddProductText: { color: '#0190A0', fontWeight: '600', marginLeft: 8 },
   addProductsList: { backgroundColor: '#FFF', padding: 16, borderRadius: 8, marginTop: 8, borderWidth: 1, borderColor: '#eee' },
   addProductsTitle: { fontWeight: 'bold', marginBottom: 12, color: '#333' },
   addProductItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },

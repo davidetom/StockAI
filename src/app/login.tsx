@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View, ScrollView } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View, ScrollView, Image } from 'react-native';
 import { useAuth } from '../../auth';
 import { supabase } from '../supabase'; 
 
@@ -57,7 +57,7 @@ export default function LoginScreen() {
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0B132B" />
+        <ActivityIndicator size="large" color="#0190A0" />
       </View>
     );
   }
@@ -71,9 +71,7 @@ export default function LoginScreen() {
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{flexGrow: 1, justifyContent: 'center'}}>
           {/* Logo e Titolo */}
           <View style={styles.logoContainer}>
-            <View style={styles.iconWrapper}>
-              <Ionicons name="storefront" size={40} color="#FFF" />
-            </View>
+            <Image source={require('../../assets/icon.png')} style={styles.iconImage} />
             <Text style={styles.title}>StockAI</Text>
             <Text style={styles.subtitle}>{isLoginMode ? 'Bentornato nel tuo magazzino' : 'Crea il tuo account'}</Text>
           </View>
@@ -123,7 +121,7 @@ export default function LoginScreen() {
                             style={[styles.localeChip, selectedLocaleId === loc.id && styles.localeChipActive]}
                             onPress={() => setSelectedLocaleId(loc.id)}
                           >
-                            <Text style={{ color: selectedLocaleId === loc.id ? '#0052FF' : '#333' }}>{loc.name}</Text>
+                            <Text style={{ color: selectedLocaleId === loc.id ? '#0190A0' : '#333' }}>{loc.name}</Text>
                           </TouchableOpacity>
                         ))}
                       </ScrollView>
@@ -191,7 +189,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
   content: { flex: 1, paddingHorizontal: 24, paddingTop: 40 },
   logoContainer: { alignItems: 'center', marginBottom: 40, marginTop: 20 },
-  iconWrapper: { backgroundColor: '#1C2541', padding: 16, borderRadius: 16, marginBottom: 16 },
+  iconImage: { width: 80, height: 80, borderRadius: 16, marginBottom: 16 },
   title: { fontSize: 28, fontWeight: 'bold', color: '#000', marginBottom: 8 },
   subtitle: { fontSize: 14, color: '#666' },
   
@@ -214,13 +212,13 @@ const styles = StyleSheet.create({
     color: '#111',
   },
   
-  btnManager: { flexDirection: 'row', backgroundColor: '#0B132B', paddingVertical: 16, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginTop: 8 },
+  btnManager: { flexDirection: 'row', backgroundColor: '#0190A0', paddingVertical: 16, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginTop: 8 },
   btnManagerText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
   
   footerLinks: { alignItems: 'center', marginBottom: 40 },
-  linkBlue: { color: '#0052FF', fontSize: 13 },
+  linkBlue: { color: '#0190A0', fontSize: 13 },
   footerText: { color: '#666', fontSize: 13 },
-  linkBlueBold: { color: '#0052FF', fontSize: 13, fontWeight: 'bold' },
+  linkBlueBold: { color: '#0190A0', fontSize: 13, fontWeight: 'bold' },
   
   localeSection: { marginBottom: 16 },
   sectionLabel: { fontSize: 14, fontWeight: 'bold', color: '#333', marginBottom: 8 },
@@ -228,8 +226,8 @@ const styles = StyleSheet.create({
   toggleBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 6 },
   toggleBtnActive: { backgroundColor: '#FFF', shadowColor: '#000', shadowOffset: {width: 0, height: 1}, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2 },
   toggleText: { fontSize: 13, color: '#666', fontWeight: 'bold' },
-  toggleTextActive: { color: '#0052FF' },
+  toggleTextActive: { color: '#0190A0' },
   
   localeChip: { paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#EAEAEA', borderRadius: 20, marginRight: 8 },
-  localeChipActive: { borderColor: '#0052FF', backgroundColor: '#F0F4FF' },
+  localeChipActive: { borderColor: '#0190A0', backgroundColor: '#F0F4FF' },
 });
