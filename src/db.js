@@ -236,6 +236,7 @@ export const updateProductSupplier = async (productId, newSupplier) => {
 
 // --- LOGICA CHIAVE API GEMINI ---
 const API_KEY_STORAGE = '@stockai_custom_api_key';
+const API_MODEL_STORAGE = '@stockai_custom_api_model';
 
 export const getCustomApiKey = async () => {
   try {
@@ -254,6 +255,26 @@ export const saveCustomApiKey = async (key) => {
     }
   } catch (e) {
     console.error('Errore nel salvataggio dell\'API Key', e);
+  }
+};
+
+export const getCustomModel = async () => {
+  try {
+    return await AsyncStorage.getItem(API_MODEL_STORAGE);
+  } catch (e) {
+    return null;
+  }
+};
+
+export const saveCustomModel = async (model) => {
+  try {
+    if (model && model.trim() !== '') {
+      await AsyncStorage.setItem(API_MODEL_STORAGE, model.trim());
+    } else {
+      await AsyncStorage.removeItem(API_MODEL_STORAGE);
+    }
+  } catch (e) {
+    console.error('Errore nel salvataggio del Modello API', e);
   }
 };
 

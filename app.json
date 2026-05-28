@@ -1,25 +1,25 @@
 {
   "expo": {
-    "name": "stockai-prototype",
-    "slug": "stockai-prototype",
+    "name": "stockai",
+    "slug": "stockai",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "stockaiprototype",
+    "icon": "./assets/icon.png",
+    "scheme": "stockai",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.anonymous.stockai-prototype"
+      "icon": "./assets/icon.png",
+      "bundleIdentifier": "com.anonymous.stockai"
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/icon.png",
+        "backgroundImage": "./assets/icon.png",
+        "monochromeImage": "./assets/icon.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.stockaiprototype"
+      "package": "com.anonymous.stockai"
     },
     "web": {
       "output": "static",

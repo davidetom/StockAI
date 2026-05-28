@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { getCustomApiKey } from './db';
+import { getCustomApiKey, getCustomModel } from './db';
 
 const getGenAIInstance = async () => {
   const customKey = await getCustomApiKey();
@@ -7,11 +7,16 @@ const getGenAIInstance = async () => {
   return new GoogleGenerativeAI(activeKey);
 };
 
+const getActiveModel = async () => {
+  const model = await getCustomModel();
+  return model || 'gemini-2.5-flash-lite';
+};
+
 // 1. GESTIONE MULTIPLA DEGLI INTENTI
 export const parseInventoryIntent = async (userMessage, currentProducts) => {
   try {
     const genAI = await getGenAIInstance();
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const model = genAI.getGenerativeModel({ model: await getActiveModel() });
 
     const prompt = `
     Sei l'agente AI di un gestionale HORECA. L'utente ti dirà cosa ha prelevato o aggiunto al magazzino.
@@ -53,7 +58,7 @@ export const categorizeSingleProduct = async (productName, existingCategories = 
   
   try {
     const genAI = await getGenAIInstance();
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const model = genAI.getGenerativeModel({ model: await getActiveModel() });
 
     const prompt = `
     Sei un esperto di logistica HORECA. Devi classificare un singolo nuovo prodotto da aggiungere al magazzino.
@@ -89,7 +94,7 @@ export const categorizeSingleProduct = async (productName, existingCategories = 
 export const transcribeAudio = async (base64Audio, mimeType) => {
   try {
     const genAI = await getGenAIInstance();
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const model = genAI.getGenerativeModel({ model: await getActiveModel() });
     
     const prompt = `Trascrivi esattamente l'audio in italiano, senza aggiungere altro.`;
 
@@ -102,7 +107,7 @@ export const transcribeAudio = async (base64Audio, mimeType) => {
 export const scanDeliveryNote = async (base64Image, mimeType, currentProducts, supplierName, existingCategories = [], availableIcons = []) => {
   try {
     const genAI = await getGenAIInstance();
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const model = genAI.getGenerativeModel({ model: await getActiveModel() });
 
     const prompt = `
     Sei un esperto di logistica e analisi documenti. Leggi la bolla di consegna (o DDT/Fattura) allegata come immagine. Riguarda un ordine dal fornitore "${supplierName}".
@@ -151,7 +156,7 @@ export const scanDeliveryNote = async (base64Image, mimeType, currentProducts, s
 export const generateInventoryTemplate = async (industryType, availableIcons = []) => {
   try {
     const genAI = await getGenAIInstance();
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const model = genAI.getGenerativeModel({ model: await getActiveModel() });
 
     const prompt = `
     Sei un consulente logistico per il settore HORECA. Un utente ha appena aperto un locale di tipo "${industryType}".
@@ -191,7 +196,7 @@ export const generateInventoryTemplate = async (industryType, availableIcons = [
 export const scanOnboardingReceipt = async (base64Image, mimeType, existingCategories = [], availableIcons = []) => {
   try {
     const genAI = await getGenAIInstance();
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const model = genAI.getGenerativeModel({ model: await getActiveModel() });
 
     const prompt = `
     Sei un esperto di logistica. Leggi la fattura o il DDT allegato come immagine.
@@ -241,7 +246,7 @@ export const scanOnboardingReceipt = async (base64Image, mimeType, existingCateg
 export const analyzeInventoryFile = async (base64Data, mimeType, industryType, availableIcons = []) => {
   try {
     const genAI = await getGenAIInstance();
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const model = genAI.getGenerativeModel({ model: await getActiveModel() });
 
     const prompt = `
     Sei un estrattore di dati precisissimo per un sistema logistico HORECA.
@@ -292,7 +297,7 @@ export const analyzeInventoryFile = async (base64Data, mimeType, industryType, a
 export const scanShelfInventory = async (base64Image, mimeType, existingCategories = [], availableIcons = []) => {
   try {
     const genAI = await getGenAIInstance();
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const model = genAI.getGenerativeModel({ model: await getActiveModel() });
 
     const prompt = `
     Sei un'IA di visione artificiale per un gestionale di magazzino HORECA.

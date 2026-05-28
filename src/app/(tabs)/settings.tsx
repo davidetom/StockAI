@@ -3,7 +3,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../../auth';
-import { getCustomApiKey, saveCustomApiKey } from '../../db';
+import { getCustomApiKey, saveCustomApiKey, getCustomModel, saveCustomModel } from '../../db';
 import { supabase } from '../../supabase';
 
 export default function SettingsScreen() {
@@ -13,6 +13,14 @@ export default function SettingsScreen() {
   const [isDebugOpen, setIsDebugOpen] = useState(false);
   const [currentKeyDisplay, setCurrentKeyDisplay] = useState('Predefinita (.env)');
   const [inputApiKey, setInputApiKey] = useState('');
+  const [selectedModel, setSelectedModel] = useState('gemini-2.5-flash-lite');
+
+  const AVAILABLE_MODELS = [
+    { id: 'gemini-2.5-flash-lite', label: 'Flash Lite (Veloce, Limiti Alti)' },
+    { id: 'gemini-flash-latest', label: 'Flash Latest (Stabile)' },
+    { id: 'gemini-2.5-flash', label: 'Flash 2.5 (Sperimentale)' },
+    { id: 'gemini-1.5-pro', label: 'Pro 1.5 (Qualità, Lento)' }
+  ];
 
   // Stati Multi-Tenant
   const [localeName, setLocaleName] = useState<string>('Caricamento...');
@@ -54,26 +62,34 @@ export default function SettingsScreen() {
       setCurrentKeyDisplay('Predefinita (.env)');
       setInputApiKey('');
     }
+
+    const model = await getCustomModel();
+    if (model) {
+      setSelectedModel(model);
+    }
   };
 
-  const handleSaveKey = async () => {
+  const handleSaveConfig = async () => {
     await saveCustomApiKey(inputApiKey);
-    Alert.alert("Configurazione Salvata", "La chiave API Gemini è stata aggiornata correttamente.");
+    await saveCustomModel(selectedModel);
+    Alert.alert("Configurazione Salvata", "Le impostazioni AI sono state aggiornate correttamente.");
     loadApiKey();
   };
 
-  const handleResetKey = async () => {
+  const handleResetConfig = async () => {
     Alert.alert(
-      "Ripristina Chiave",
-      "Vuoi tornare ad utilizzare la chiave API predefinita del sistema?",
+      "Ripristina Impostazioni",
+      "Vuoi tornare alle impostazioni predefinite del sistema?",
       [
         { text: "Annulla", style: "cancel" },
         {
           text: "Ripristina", style: "destructive", onPress: async () => {
             await saveCustomApiKey('');
+            await saveCustomModel('');
             setInputApiKey('');
+            setSelectedModel('gemini-2.5-flash-lite');
             setCurrentKeyDisplay('Predefinita (.env)');
-            Alert.alert("Ripristinato", "L'app è tornata alla chiave API predefinita.");
+            Alert.alert("Ripristinato", "L'app è tornata alle impostazioni predefinite.");
           }
         }
       ]
@@ -256,17 +272,30 @@ export default function SettingsScreen() {
                 autoCorrect={false}
               />
 
-              <View style={styles.actionsRow}>
-                {currentKeyDisplay !== 'Predefinita (.env)' && (
-                  <TouchableOpacity style={styles.btnReset} onPress={handleResetKey}>
-                    <Ionicons name="refresh-outline" size={16} color="#D93025" style={{ marginRight: 4 }} />
-                    <Text style={styles.btnResetText}>Ripristina</Text>
+              <Text style={styles.inputLabel}>Seleziona Modello IA:</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsContainer}>
+                {AVAILABLE_MODELS.map(model => (
+                  <TouchableOpacity 
+                    key={model.id} 
+                    style={[styles.chip, selectedModel === model.id && styles.chipActive]}
+                    onPress={() => setSelectedModel(model.id)}
+                  >
+                    <Text style={[styles.chipText, selectedModel === model.id && styles.chipTextActive]}>
+                      {model.label}
+                    </Text>
                   </TouchableOpacity>
-                )}
+                ))}
+              </ScrollView>
 
-                <TouchableOpacity style={styles.btnSave} onPress={handleSaveKey}>
+              <View style={styles.actionsRow}>
+                <TouchableOpacity style={styles.btnReset} onPress={handleResetConfig}>
+                  <Ionicons name="refresh-outline" size={16} color="#D93025" style={{ marginRight: 4 }} />
+                  <Text style={styles.btnResetText}>Ripristina</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.btnSave} onPress={handleSaveConfig}>
                   <Ionicons name="save-outline" size={16} color="#FFF" style={{ marginRight: 4 }} />
-                  <Text style={styles.btnSaveText}>Salva Chiave</Text>
+                  <Text style={styles.btnSaveText}>Salva Impostazioni</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -317,6 +346,12 @@ const styles = StyleSheet.create({
   apiKeyHighlight: { fontWeight: 'bold', color: '#0B132B', backgroundColor: '#F0F2F5', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   inputLabel: { fontSize: 13, fontWeight: '600', color: '#666', marginBottom: 6 },
   input: { backgroundColor: '#F8F9FA', borderWidth: 1, borderColor: '#EAEAEA', borderRadius: 8, padding: 12, fontSize: 14, color: '#111', marginBottom: 16 },
+  
+  chipsContainer: { paddingBottom: 8, gap: 8, marginBottom: 16 },
+  chip: { backgroundColor: '#F0F2F5', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: '#EAEAEA' },
+  chipActive: { backgroundColor: '#0052FF', borderColor: '#0052FF' },
+  chipText: { fontSize: 13, color: '#333', fontWeight: '500' },
+  chipTextActive: { color: '#FFF' },
 
   actionsRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
   btnSave: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0052FF', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8 },
