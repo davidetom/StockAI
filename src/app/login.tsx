@@ -1,18 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View, ScrollView, Image } from 'react-native';
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../auth';
-import { supabase } from '../supabase'; 
+import { supabase } from '../supabase';
 
 export default function LoginScreen() {
   const { login, register, isLoading } = useAuth();
-  
+
   const [isLoginMode, setIsLoginMode] = useState(true);
-  
+
   // Stati per i campi di input
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  
+
   // Stati per registrazione
   const [locali, setLocali] = useState<any[]>([]);
   const [isNewLocale, setIsNewLocale] = useState(false);
@@ -33,18 +33,18 @@ export default function LoginScreen() {
       Alert.alert('Errore', 'Inserisci email e password.');
       return;
     }
-    
+
     try {
       if (isLoginMode) {
         await login(email, password);
       } else {
         if (isNewLocale && !newLocaleName) {
-           Alert.alert('Errore', 'Inserisci il nome del nuovo locale.');
-           return;
+          Alert.alert('Errore', 'Inserisci il nome del nuovo locale.');
+          return;
         }
         if (!isNewLocale && !selectedLocaleId) {
-           Alert.alert('Errore', 'Seleziona un locale esistente o creane uno nuovo.');
-           return;
+          Alert.alert('Errore', 'Seleziona un locale esistente o creane uno nuovo.');
+          return;
         }
         await register(email, password, newLocaleName, isNewLocale, selectedLocaleId);
         Alert.alert('Successo', 'Registrazione completata!');
@@ -57,40 +57,43 @@ export default function LoginScreen() {
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0190A0" />
+        <ActivityIndicator size="large" color="#DB7F18" />
       </View>
     );
   }
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.content}
       >
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{flexGrow: 1, justifyContent: 'center'}}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}>
           {/* Logo e Titolo */}
-          <View style={styles.logoContainer}>
-            <Image source={require('../../assets/icon.png')} style={styles.iconImage} />
-            <Text style={styles.title}>StockAI</Text>
-            <Text style={styles.subtitle}>{isLoginMode ? 'Bentornato nel tuo magazzino' : 'Crea il tuo account'}</Text>
+          <View style={styles.headerContainer}>
+            <Text style={styles.subtitleAcronym}>Pantry Nimble Notation</Text>
+            <View style={styles.logoRow}>
+              <Image source={require('../../assets/icon.png')} style={styles.iconImageSmall} />
+              <Text style={styles.titleElegant}>PaNiNo</Text>
+            </View>
+            <Text style={styles.subtitle}>{isLoginMode ? 'Il tuo magazzino intelligente' : 'Crea il tuo account'}</Text>
           </View>
 
           {/* Form di Auth */}
           <View style={styles.formContainer}>
-            
+
             {!isLoginMode && (
               <View style={styles.localeSection}>
                 <Text style={styles.sectionLabel}>Locale</Text>
-                
+
                 <View style={styles.toggleContainer}>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={[styles.toggleBtn, !isNewLocale && styles.toggleBtnActive]}
                     onPress={() => setIsNewLocale(false)}
                   >
                     <Text style={[styles.toggleText, !isNewLocale && styles.toggleTextActive]}>Unisciti a esistente</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={[styles.toggleBtn, isNewLocale && styles.toggleBtnActive]}
                     onPress={() => setIsNewLocale(true)}
                   >
@@ -101,7 +104,7 @@ export default function LoginScreen() {
                 {isNewLocale ? (
                   <View style={styles.inputContainer}>
                     <Ionicons name="business-outline" size={20} color="#666" style={styles.inputIcon} />
-                    <TextInput 
+                    <TextInput
                       style={styles.input}
                       placeholder="Nome del Nuovo Locale"
                       placeholderTextColor="#999"
@@ -112,16 +115,16 @@ export default function LoginScreen() {
                 ) : (
                   <View style={{ marginBottom: 16 }}>
                     {locali.length === 0 ? (
-                      <Text style={{color: '#666', fontSize: 13}}>Nessun locale trovato. Creane uno nuovo.</Text>
+                      <Text style={{ color: '#666', fontSize: 13 }}>Nessun locale trovato. Creane uno nuovo.</Text>
                     ) : (
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 50 }}>
                         {locali.map(loc => (
-                          <TouchableOpacity 
-                            key={loc.id} 
+                          <TouchableOpacity
+                            key={loc.id}
                             style={[styles.localeChip, selectedLocaleId === loc.id && styles.localeChipActive]}
                             onPress={() => setSelectedLocaleId(loc.id)}
                           >
-                            <Text style={{ color: selectedLocaleId === loc.id ? '#0190A0' : '#333' }}>{loc.name}</Text>
+                            <Text style={{ color: selectedLocaleId === loc.id ? '#DB7F18' : '#333' }}>{loc.name}</Text>
                           </TouchableOpacity>
                         ))}
                       </ScrollView>
@@ -133,7 +136,7 @@ export default function LoginScreen() {
 
             <View style={styles.inputContainer}>
               <Ionicons name="mail-outline" size={20} color="#666" style={styles.inputIcon} />
-              <TextInput 
+              <TextInput
                 style={styles.input}
                 placeholder="Email"
                 placeholderTextColor="#999"
@@ -147,7 +150,7 @@ export default function LoginScreen() {
 
             <View style={styles.inputContainer}>
               <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
-              <TextInput 
+              <TextInput
                 style={styles.input}
                 placeholder="Password"
                 placeholderTextColor="#999"
@@ -160,7 +163,7 @@ export default function LoginScreen() {
 
             <TouchableOpacity style={styles.btnManager} onPress={handleAuth}>
               <Text style={styles.btnManagerText}>{isLoginMode ? 'Accedi' : 'Registrati'}</Text>
-              <Ionicons name="arrow-forward-outline" size={20} color="#FFF" style={{marginLeft: 8}} />
+              <Ionicons name="arrow-forward-outline" size={20} color="#FFF" style={{ marginLeft: 8 }} />
             </TouchableOpacity>
           </View>
 
@@ -171,7 +174,7 @@ export default function LoginScreen() {
                 <Text style={styles.linkBlue}>Password dimenticata?</Text>
               </TouchableOpacity>
             )}
-            <View style={{flexDirection: 'row', marginTop: 24}}>
+            <View style={{ flexDirection: 'row', marginTop: 24 }}>
               <Text style={styles.footerText}>{isLoginMode ? 'Non hai un account? ' : 'Hai già un account? '}</Text>
               <TouchableOpacity onPress={() => setIsLoginMode(!isLoginMode)}>
                 <Text style={styles.linkBlueBold}>{isLoginMode ? 'Registrati' : 'Accedi'}</Text>
@@ -185,14 +188,16 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8F9FA' },
-  container: { flex: 1, backgroundColor: '#F8F9FA' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8F5E6' },
+  container: { flex: 1, backgroundColor: '#F8F5E6' },
   content: { flex: 1, paddingHorizontal: 24, paddingTop: 40 },
-  logoContainer: { alignItems: 'center', marginBottom: 40, marginTop: 20 },
-  iconImage: { width: 80, height: 80, borderRadius: 16, marginBottom: 16 },
-  title: { fontSize: 28, fontWeight: 'bold', color: '#000', marginBottom: 8 },
+  headerContainer: { alignItems: 'center', marginBottom: 40, marginTop: 20 },
+  logoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  iconImageSmall: { width: 50, height: 50, borderRadius: 12, marginRight: 12 },
+  titleElegant: { fontSize: 36, fontWeight: '300', color: '#000', fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontStyle: 'italic' },
+  subtitleAcronym: { fontSize: 11, color: '#999', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 12 },
   subtitle: { fontSize: 14, color: '#666' },
-  
+
   formContainer: { marginBottom: 32 },
   inputContainer: {
     flexDirection: 'row',
@@ -211,23 +216,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#111',
   },
-  
-  btnManager: { flexDirection: 'row', backgroundColor: '#0190A0', paddingVertical: 16, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginTop: 8 },
+
+  btnManager: { flexDirection: 'row', backgroundColor: '#DB7F18', paddingVertical: 16, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginTop: 8 },
   btnManagerText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
-  
+
   footerLinks: { alignItems: 'center', marginBottom: 40 },
-  linkBlue: { color: '#0190A0', fontSize: 13 },
+  linkBlue: { color: '#DB7F18', fontSize: 13 },
   footerText: { color: '#666', fontSize: 13 },
-  linkBlueBold: { color: '#0190A0', fontSize: 13, fontWeight: 'bold' },
-  
+  linkBlueBold: { color: '#DB7F18', fontSize: 13, fontWeight: 'bold' },
+
   localeSection: { marginBottom: 16 },
   sectionLabel: { fontSize: 14, fontWeight: 'bold', color: '#333', marginBottom: 8 },
   toggleContainer: { flexDirection: 'row', backgroundColor: '#EAEAEA', borderRadius: 8, padding: 4, marginBottom: 16 },
   toggleBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 6 },
-  toggleBtnActive: { backgroundColor: '#FFF', shadowColor: '#000', shadowOffset: {width: 0, height: 1}, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2 },
+  toggleBtnActive: { backgroundColor: '#FFF', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2 },
   toggleText: { fontSize: 13, color: '#666', fontWeight: 'bold' },
-  toggleTextActive: { color: '#0190A0' },
-  
+  toggleTextActive: { color: '#DB7F18' },
+
   localeChip: { paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#EAEAEA', borderRadius: 20, marginRight: 8 },
-  localeChipActive: { borderColor: '#0190A0', backgroundColor: '#F0F4FF' },
+  localeChipActive: { borderColor: '#DB7F18', backgroundColor: '#FFF4EB' },
 });

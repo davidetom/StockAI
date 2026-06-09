@@ -19,10 +19,10 @@ export const parseInventoryIntent = async (userMessage, currentProducts) => {
     const model = genAI.getGenerativeModel({ model: await getActiveModel() });
 
     const prompt = `
-    Sei l'agente AI di un gestionale HORECA. L'utente ti dirà cosa ha prelevato o aggiunto al magazzino.
+    Sei l'agente AI di un gestionale di magazzino. Sei esperto sia nel settore HORECA (Hotel/Ristorazione) che nel retail commerciale generale (negozi, calzature, abbigliamento, ferramenta). L'utente ti dirà cosa ha prelevato o aggiunto al magazzino.
     Può menzionare PIÙ prodotti contemporaneamente.
-    SE l'utente menziona la preparazione di un piatto (es. "ho preparato 2 carbonare"), STIMA le quantità degli ingredienti utilizzati in base all'inventario (es. guanciale, uova, pecorino, pasta) calcolandole per il numero di porzioni. Le quantità DEVONO poter essere NUMERI DECIMALI (es. -0.25 per 250g se l'unità è in kg).
-    Ecco l'inventario attuale: ${JSON.stringify(currentProducts.map(p => ({id: p.id, name: p.name, unit: p.unit})))}
+    SE l'utente menziona la preparazione di un piatto (es. "ho preparato 2 carbonare"), STIMA le quantità degli ingredienti utilizzati. Allo stesso modo, se menziona un assemblaggio generico o una vendita (es. "ho venduto 2 kit"), stima i componenti. Calcola sempre in proporzione. Le quantità DEVONO poter essere NUMERI DECIMALI (es. -0.25 per 250g se l'unità è in kg, o intere se in pezzi). -0.25 per 250g se l'unità è in kg, o intere se in pezzi).
+    Ecco l'inventario attuale: ${JSON.stringify(currentProducts.map(p => ({ id: p.id, name: p.name, unit: p.unit })))}
     
     Messaggio dell'utente: "${userMessage}"
     
@@ -55,13 +55,13 @@ export const parseInventoryIntent = async (userMessage, currentProducts) => {
 // 2. GENERAZIONE CATEGORIA E ICONA INCREMENTALE (Per singolo prodotto)
 export const categorizeSingleProduct = async (productName, existingCategories = [], availableIcons = []) => {
   if (!productName) return null;
-  
+
   try {
     const genAI = await getGenAIInstance();
     const model = genAI.getGenerativeModel({ model: await getActiveModel() });
 
     const prompt = `
-    Sei un esperto di logistica HORECA. Devi classificare un singolo nuovo prodotto da aggiungere al magazzino.
+    Sei un esperto di logistica sia per il settore HORECA che per attività commerciali generali (negozi, retail). Devi classificare un singolo nuovo prodotto da aggiungere al magazzino.
     
     Prodotto da classificare: "${productName}"
     
@@ -95,10 +95,10 @@ export const transcribeAudio = async (base64Audio, mimeType) => {
   try {
     const genAI = await getGenAIInstance();
     const model = genAI.getGenerativeModel({ model: await getActiveModel() });
-    
-    const prompt = `Trascrivi esattamente l'audio in italiano, senza aggiungere altro.`;
 
-    const result = await model.generateContent([ prompt, { inlineData: { data: base64Audio, mimeType: mimeType } } ]);
+    const prompt = `Trascrivi esattamente l'audio esclusivamente in italiano, senza aggiungere altro.`;
+
+    const result = await model.generateContent([prompt, { inlineData: { data: base64Audio, mimeType: mimeType } }]);
     return result.response.text().trim();
   } catch (error) { return null; }
 };
@@ -112,7 +112,7 @@ export const scanDeliveryNote = async (base64Image, mimeType, currentProducts, s
     const prompt = `
     Sei un esperto di logistica e analisi documenti. Leggi la bolla di consegna (o DDT/Fattura) allegata come immagine. Riguarda un ordine dal fornitore "${supplierName}".
     
-    Database Prodotti: ${JSON.stringify(currentProducts.map(p => ({id: p.id, name: p.name, unit: p.unit})))}
+    Database Prodotti: ${JSON.stringify(currentProducts.map(p => ({ id: p.id, name: p.name, unit: p.unit })))}
     Categorie Esistenti: ${JSON.stringify(existingCategories)}
     Icone disponibili: ${JSON.stringify(availableIcons)}
 
@@ -142,7 +142,7 @@ export const scanDeliveryNote = async (base64Image, mimeType, currentProducts, s
       prompt,
       { inlineData: { data: base64Image, mimeType: mimeType } }
     ]);
-    
+
     const responseText = result.response.text().trim();
     const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '');
     return JSON.parse(cleanJson);
@@ -159,7 +159,7 @@ export const generateInventoryTemplate = async (industryType, availableIcons = [
     const model = genAI.getGenerativeModel({ model: await getActiveModel() });
 
     const prompt = `
-    Sei un consulente logistico per il settore HORECA. Un utente ha appena aperto un locale di tipo "${industryType}".
+    Sei un consulente logistico esperto sia per il settore HORECA che per attività commerciali retail/generali. Un utente ha appena aperto una nuova attività di tipo "${industryType}".
     Il suo magazzino è attualmente vuoto.
     
     Genera un inventario iniziale intelligente con i 15/20 prodotti più indispensabili per questa specifica attività.
@@ -171,6 +171,7 @@ export const generateInventoryTemplate = async (industryType, availableIcons = [
       "products": [
         {
           "name": "Nome Prodotto (es. Farina 00)",
+          "quantity": 0, // imposta sempre 0 per l'onboarding
           "unit": "kg", // unità di misura stimata in base al tipo di prodotto (es. kg per farine, litri per bevande, pz. per prodotti confezionati)
           "min_threshold": 5, // o stimato in base al tipo di prodotto, se non sei sicuro usa 5 come default
           "max_threshold": 20, // o stimato in base al tipo di prodotto, se non sei sicuro usa 20 come default
@@ -232,7 +233,7 @@ export const scanOnboardingReceipt = async (base64Image, mimeType, existingCateg
       prompt,
       { inlineData: { data: base64Image, mimeType: mimeType } }
     ]);
-    
+
     const responseText = result.response.text().trim();
     const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '');
     return JSON.parse(cleanJson);
@@ -249,7 +250,7 @@ export const analyzeInventoryFile = async (base64Data, mimeType, industryType, a
     const model = genAI.getGenerativeModel({ model: await getActiveModel() });
 
     const prompt = `
-    Sei un estrattore di dati precisissimo per un sistema logistico HORECA.
+    Sei un estrattore di dati precisissimo per un sistema logistico valido sia in ambito HORECA che in negozi retail generici.
     Analizza il documento allegato (PDF, CSV o TXT) che contiene un inventario di magazzino di un locale: "${industryType}".
     Icone disponibili: ${JSON.stringify(availableIcons)}
 
@@ -284,7 +285,7 @@ export const analyzeInventoryFile = async (base64Data, mimeType, industryType, a
       prompt,
       { inlineData: { data: base64Data, mimeType: mimeType } }
     ]);
-    
+
     const cleanJson = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
     return JSON.parse(cleanJson).products;
   } catch (e) {
@@ -300,7 +301,7 @@ export const scanShelfInventory = async (base64Image, mimeType, existingCategori
     const model = genAI.getGenerativeModel({ model: await getActiveModel() });
 
     const prompt = `
-    Sei un'IA di visione artificiale per un gestionale di magazzino HORECA.
+    Sei un'IA di visione artificiale per un gestionale di magazzino valido sia in ambito HORECA che per negozi/attività commerciali in generale.
     L'utente ha scattato una foto agli scaffali, ai frigoriferi o alla dispensa del suo locale.
     
     Categorie Esistenti: ${JSON.stringify(existingCategories)}
@@ -335,7 +336,7 @@ export const scanShelfInventory = async (base64Image, mimeType, existingCategori
       prompt,
       { inlineData: { data: base64Image, mimeType: mimeType } }
     ]);
-    
+
     const responseText = result.response.text().trim();
     const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '');
     return JSON.parse(cleanJson);

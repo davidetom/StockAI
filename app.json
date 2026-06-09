@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "stockai",
-    "slug": "stockai",
+    "name": "panino",
+    "slug": "panino",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "scheme": "stockai",
+    "scheme": "panino",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/icon.png",
-      "bundleIdentifier": "com.davidetommasino.stockai"
+      "bundleIdentifier": "com.davidetommasino.panino"
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +19,7 @@
         "monochromeImage": "./assets/icon.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.davidetommasino.stockai"
+      "package": "com.davidetommasino.panino"
     },
     "web": {
       "output": "static",
@@ -30,7 +30,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#DB7F18",
           "android": {
             "image": "./assets/images/splash-icon.png",
             "imageWidth": 76

@@ -19,7 +19,7 @@ export default function TabLayout() {
           elevation: 0,
           shadowOpacity: 0,
         },
-        tabBarActiveTintColor: '#0190A0',
+        tabBarActiveTintColor: '#DB7F18',
         tabBarInactiveTintColor: '#8E8E93',
         headerShown: false,
       }}>

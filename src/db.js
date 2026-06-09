@@ -335,8 +335,8 @@ export const getDraftOrders = async () => {
 };
 
 // --- LOGICA CHIAVE API GEMINI (rimane in locale) ---
-const API_KEY_STORAGE = '@stockai_custom_api_key';
-const API_MODEL_STORAGE = '@stockai_custom_api_model';
+const API_KEY_STORAGE = '@panino_custom_api_key';
+const API_MODEL_STORAGE = '@panino_custom_api_model';
 
 export const getCustomApiKey = async () => {
   try {

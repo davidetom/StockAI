@@ -32,9 +32,9 @@ function RootLayoutNav() {
 
   if (user && user.status === 'pending') {
     return (
-      <SafeAreaView style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8F9FA' }}>
+      <SafeAreaView style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8F5E6' }}>
         <View style={{ padding: 24, alignItems: 'center' }}>
-          <Ionicons name="time-outline" size={80} color="#0190A0" />
+          <Ionicons name="time-outline" size={80} color="#DB7F18" />
           <Text style={{ fontSize: 24, fontWeight: 'bold', marginTop: 16, textAlign: 'center', color: '#111' }}>In Attesa di Approvazione</Text>
           <Text style={{ textAlign: 'center', color: '#666', marginTop: 12, fontSize: 16 }}>
             Il proprietario del locale deve approvare la tua richiesta prima che tu possa accedere al magazzino.
