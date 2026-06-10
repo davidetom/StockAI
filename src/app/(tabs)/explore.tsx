@@ -71,6 +71,7 @@ export default function WarehouseScreen() {
   const [selectedSupplierFilter, setSelectedSupplierFilter] = useState<string | null>(null);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(null);
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string | null>(null);
+  const [isFiltersVisible, setIsFiltersVisible] = useState(false);
 
   const [isAddModalVisible, setIsAddModalVisible] = useState(false);
   const [isSupplierModalVisible, setIsSupplierModalVisible] = useState(false);
@@ -720,39 +721,55 @@ export default function WarehouseScreen() {
                   value={searchQuery}
                   onChangeText={setSearchQuery}
                 />
-                {selectedSupplierFilter && (
-                  <TouchableOpacity onPress={() => setSelectedSupplierFilter(null)} style={styles.clearFilterBadge}>
-                    <Text style={styles.clearFilterText}>X Filtro Fornitore</Text>
-                  </TouchableOpacity>
-                )}
+                <TouchableOpacity onPress={() => setIsFiltersVisible(!isFiltersVisible)} style={[styles.clearFilterBadge, { backgroundColor: isFiltersVisible ? '#8DA67F' : '#EAEAEA', marginLeft: 8 }]}>
+                  <Text style={[styles.clearFilterText, { color: isFiltersVisible ? '#FFF' : '#333' }]}>
+                    {isFiltersVisible ? 'Chiudi Filtri' : 'Filtri'}
+                  </Text>
+                </TouchableOpacity>
               </View>
-              <View style={styles.categoriesWrapper}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesScroll}>
-                  <TouchableOpacity style={[styles.categoryChip, !selectedCategoryFilter && styles.categoryChipActive]} onPress={() => setSelectedCategoryFilter(null)}>
-                    <Text style={{ color: !selectedCategoryFilter ? '#FFF' : '#333' }}>Tutte</Text>
-                  </TouchableOpacity>
-                  {uniqueCategories.map(cat => (
-                    <TouchableOpacity key={cat} style={[styles.categoryChip, selectedCategoryFilter === cat && styles.categoryChipActive]} onPress={() => setSelectedCategoryFilter(cat)}>
-                      <Text style={{ color: selectedCategoryFilter === cat ? '#FFF' : '#333' }}>{cat}</Text>
+
+              {isFiltersVisible && (
+                <View style={{ backgroundColor: '#F8F9FA', borderBottomWidth: 1, borderColor: '#F0F0F0', paddingBottom: 8 }}>
+                  <Text style={{ paddingHorizontal: 16, paddingTop: 8, fontSize: 12, fontWeight: 'bold', color: '#666', textTransform: 'uppercase' }}>Fornitore</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesScroll}>
+                    <TouchableOpacity style={[styles.categoryChip, !selectedSupplierFilter && styles.categoryChipActive]} onPress={() => setSelectedSupplierFilter(null)}>
+                      <Text style={{ color: !selectedSupplierFilter ? '#FFF' : '#333' }}>Tutti</Text>
                     </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-              <View style={[styles.categoriesWrapper, { borderTopWidth: 0 }]}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesScroll}>
-                  <TouchableOpacity style={[styles.categoryChip, !selectedStatusFilter && styles.categoryChipActive]} onPress={() => setSelectedStatusFilter(null)}>
-                    <Text style={{ color: !selectedStatusFilter ? '#FFF' : '#333' }}>Tutti</Text>
-                  </TouchableOpacity>
-                  {['Esaurito', 'Critico', 'In esaurim.', 'Sicuro'].map(status => {
-                    const statusLabel = status === 'Esaurito' ? 'Non disp.' : status;
-                    return (
-                      <TouchableOpacity key={status} style={[styles.categoryChip, selectedStatusFilter === statusLabel && styles.categoryChipActive]} onPress={() => setSelectedStatusFilter(statusLabel)}>
-                        <Text style={{ color: selectedStatusFilter === statusLabel ? '#FFF' : '#333' }}>{status}</Text>
+                    {uniqueSuppliers.map(s => (
+                      <TouchableOpacity key={s.name} style={[styles.categoryChip, selectedSupplierFilter === s.name && styles.categoryChipActive]} onPress={() => setSelectedSupplierFilter(s.name)}>
+                        <Text style={{ color: selectedSupplierFilter === s.name ? '#FFF' : '#333' }}>{s.name}</Text>
                       </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              </View>
+                    ))}
+                  </ScrollView>
+
+                  <Text style={{ paddingHorizontal: 16, paddingTop: 4, fontSize: 12, fontWeight: 'bold', color: '#666', textTransform: 'uppercase' }}>Categoria</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesScroll}>
+                    <TouchableOpacity style={[styles.categoryChip, !selectedCategoryFilter && styles.categoryChipActive]} onPress={() => setSelectedCategoryFilter(null)}>
+                      <Text style={{ color: !selectedCategoryFilter ? '#FFF' : '#333' }}>Tutte</Text>
+                    </TouchableOpacity>
+                    {uniqueCategories.map(cat => (
+                      <TouchableOpacity key={cat} style={[styles.categoryChip, selectedCategoryFilter === cat && styles.categoryChipActive]} onPress={() => setSelectedCategoryFilter(cat)}>
+                        <Text style={{ color: selectedCategoryFilter === cat ? '#FFF' : '#333' }}>{cat}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+
+                  <Text style={{ paddingHorizontal: 16, paddingTop: 4, fontSize: 12, fontWeight: 'bold', color: '#666', textTransform: 'uppercase' }}>Disponibilità</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesScroll}>
+                    <TouchableOpacity style={[styles.categoryChip, !selectedStatusFilter && styles.categoryChipActive]} onPress={() => setSelectedStatusFilter(null)}>
+                      <Text style={{ color: !selectedStatusFilter ? '#FFF' : '#333' }}>Tutti</Text>
+                    </TouchableOpacity>
+                    {['Esaurito', 'Critico', 'In esaurim.', 'Sicuro'].map(status => {
+                      const statusLabel = status === 'Esaurito' ? 'Non disp.' : status;
+                      return (
+                        <TouchableOpacity key={status} style={[styles.categoryChip, selectedStatusFilter === statusLabel && styles.categoryChipActive]} onPress={() => setSelectedStatusFilter(statusLabel)}>
+                          <Text style={{ color: selectedStatusFilter === statusLabel ? '#FFF' : '#333' }}>{status}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              )}
             </>
           )}
 
