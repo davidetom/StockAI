@@ -32,7 +32,8 @@ export default function ChatScreen() {
     if (aiResponse?.operations && aiResponse.operations.length > 0) {
       const opsWithUnits = aiResponse.operations.map((op: any) => {
         const matched = currentProducts.find((p: any) => p.id === op.productId);
-        return { ...op, unit: matched ? matched.unit : 'pz.' };
+        const currentQty = matched ? (matched.quantity || matched.stock || matched.current_stock || 0) : 0;
+        return { ...op, unit: matched ? matched.unit : 'pz.', currentQty };
       });
 
       setPendingAction({ text: aiResponse.replyText, operations: opsWithUnits });
@@ -114,7 +115,8 @@ export default function ChatScreen() {
 
     setIsLoading(true); // Blocca la UI durante l'aggiornamento multiplo
     for (const op of pendingAction.operations) {
-      await updateProductStock(op.productId, op.quantityChange);
+      const diff = op.updateType === 'absolute' ? (Number(op.quantityChange) - Number(op.currentQty)) : Number(op.quantityChange);
+      await updateProductStock(op.productId, diff);
     }
     setMessages(prev => [...prev, { id: Date.now().toString(), text: `✅ Operazioni registrate correttamente!`, sender: 'ai' }]);
     setPendingAction(null);
@@ -125,24 +127,35 @@ export default function ChatScreen() {
   const openEditModal = () => {
     if (!pendingAction || !pendingAction.operations) return;
 
-    setEditOperations([...pendingAction.operations]);
+    const opsWithEditVal = pendingAction.operations.map((op: any) => ({
+      ...op,
+      editValue: op.quantityChange
+    }));
+    
+    setEditOperations(opsWithEditVal);
     setIsEditModalVisible(true);
   };
 
   const setEditQty = (index: number, val: string) => {
     const updated = [...editOperations];
-    const sanitized = val.replace(/[^0-9.,-]/g, '');
-    updated[index].quantityChange = sanitized;
+    let sanitized = val.replace(/[^0-9.,-]/g, '');
+    if (updated[index].updateType === 'absolute') {
+      sanitized = sanitized.replace('-', ''); // Previene il meno se è assoluto
+    }
+    updated[index].editValue = sanitized;
     setEditOperations(updated);
   };
 
   // AGGIUNTA GUARDIA DI SICUREZZA
   const saveCorrections = () => {
     if (!pendingAction) return;
-    const finalOps = editOperations.map(op => ({
-      ...op,
-      quantityChange: parseFloat(String(op.quantityChange).replace(',', '.')) || 0
-    }));
+    const finalOps = editOperations.map(op => {
+      const val = parseFloat(String(op.editValue).replace(',', '.')) || 0;
+      return {
+        ...op,
+        quantityChange: val
+      };
+    });
     setPendingAction({ ...pendingAction, operations: finalOps });
     setIsEditModalVisible(false);
   };
@@ -176,9 +189,15 @@ export default function ChatScreen() {
               <View key={idx} style={styles.confirmHighlightBox}>
                 <Ionicons name="cube-outline" size={18} color="#DB7F18" style={{ marginRight: 6 }} />
                 <Text style={styles.confirmHighlightText}>{op.productName}</Text>
-                <Text style={[styles.confirmHighlightQty, { color: op.quantityChange > 0 ? '#1E8E3E' : '#D93025' }]}>
-                  {op.quantityChange > 0 ? '+' : ''}{op.quantityChange} {op.unit}
-                </Text>
+                {op.updateType === 'absolute' ? (
+                  <Text style={[styles.confirmHighlightQty, { color: '#333' }]}>
+                    {Number(op.quantityChange)} {op.unit}
+                  </Text>
+                ) : (
+                  <Text style={[styles.confirmHighlightQty, { color: op.quantityChange > 0 ? '#1E8E3E' : '#D93025' }]}>
+                    {op.quantityChange > 0 ? '+' : ''}{op.quantityChange} {op.unit}
+                  </Text>
+                )}
               </View>
             ))}
 
@@ -240,18 +259,20 @@ export default function ChatScreen() {
                     <View style={styles.stepperContainer}>
                       <TouchableOpacity style={styles.stepperBtn} onPress={() => {
                         const updated = [...editOperations];
-                        updated[idx].quantityChange = parseFloat((Number(updated[idx].quantityChange) - 1).toFixed(2));
+                        let newVal = parseFloat((Number(updated[idx].editValue) - 1).toFixed(2));
+                        if (updated[idx].updateType === 'absolute' && newVal < 0) newVal = 0;
+                        updated[idx].editValue = newVal;
                         setEditOperations(updated);
                       }}><Text style={styles.stepperBtnText}>-</Text></TouchableOpacity>
                       <TextInput
                         style={[styles.stepperValue, { padding: 0, minWidth: 40 }]}
                         keyboardType="numbers-and-punctuation"
-                        value={String(op.quantityChange)}
+                        value={String(op.editValue)}
                         onChangeText={(t) => setEditQty(idx, t)}
                       />
                       <TouchableOpacity style={styles.stepperBtn} onPress={() => {
                         const updated = [...editOperations];
-                        updated[idx].quantityChange = parseFloat((Number(updated[idx].quantityChange) + 1).toFixed(2));
+                        updated[idx].editValue = parseFloat((Number(updated[idx].editValue) + 1).toFixed(2));
                         setEditOperations(updated);
                       }}><Text style={styles.stepperBtnText}>+</Text></TouchableOpacity>
                     </View>

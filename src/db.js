@@ -85,6 +85,23 @@ export const deleteSupplierIfEmpty = async (supplierName) => {
   }
 };
 
+export const transferProductsSupplier = async (oldSupplier, newSupplier) => {
+  try {
+    const locale_id = await getLocaleId();
+    const { error } = await supabase.from('products')
+      .update({ supplier_id: newSupplier })
+      .eq('supplier_id', oldSupplier)
+      .eq('locale_id', locale_id);
+      
+    if (error) throw error;
+    
+    // Clean up the old supplier if it has no more products
+    await deleteSupplierIfEmpty(oldSupplier);
+  } catch (e) {
+    console.error('Errore transferProductsSupplier', e);
+  }
+};
+
 // --- LOGICA PRODOTTI ---
 export const getProducts = async () => {
   try {

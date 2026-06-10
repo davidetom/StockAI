@@ -18,27 +18,40 @@ export const parseInventoryIntent = async (userMessage, currentProducts) => {
     const genAI = await getGenAIInstance();
     const model = genAI.getGenerativeModel({ model: await getActiveModel() });
 
+    const inventoryContext = currentProducts.map(p => ({
+      id: p.id,
+      name: p.name,
+      unit: p.unit,
+      quantity: p.quantity || p.stock || p.current_stock || 0
+    }));
+
     const prompt = `
-    Sei l'agente AI di un gestionale di magazzino. Sei esperto sia nel settore HORECA (Hotel/Ristorazione) che nel retail commerciale generale (negozi, calzature, abbigliamento, ferramenta). L'utente ti dirà cosa ha prelevato o aggiunto al magazzino.
+    Sei l'agente AI di un gestionale di magazzino. Sei esperto sia nel settore HORECA (Hotel/Ristorazione) che nel retail commerciale generale (negozi, calzature, abbigliamento, ferramenta). L'utente ti dirà cosa ha prelevato o aggiunto al magazzino oppure quanto ne è rimasto fisicamente.
     Può menzionare PIÙ prodotti contemporaneamente.
-    SE l'utente menziona la preparazione di un piatto (es. "ho preparato 2 carbonare"), STIMA le quantità degli ingredienti utilizzati. Allo stesso modo, se menziona un assemblaggio generico o una vendita (es. "ho venduto 2 kit"), stima i componenti. Calcola sempre in proporzione. Le quantità DEVONO poter essere NUMERI DECIMALI (es. -0.25 per 250g se l'unità è in kg, o intere se in pezzi). -0.25 per 250g se l'unità è in kg, o intere se in pezzi).
-    SE l'utente afferma di aver terminato o finito un prodotto (es. "ho finito la farina"), imposta "quantityChange" pari all'esatto negativo della sua quantità attuale per azzerarlo.
-    SE l'utente afferma la giacenza residua (es. "sono rimasti 3 litri di latte"), imposta "quantityChange" calcolando la differenza (Giacenza Dichiarata - Quantità Attuale).
-    Ecco l'inventario attuale (inclusa la quantità corrente in magazzino): ${JSON.stringify(currentProducts.map(p => ({ id: p.id, name: p.name, unit: p.unit, quantity: p.quantity })))}
+
+    Ecco l'inventario attuale con le giacenze ("current_stock"): ${JSON.stringify(inventoryContext)}
     
     Messaggio dell'utente: "${userMessage}"
-    
-    Capisci quali e quanti prodotti sono stati modificati. Usa i decimali (con il punto, es. -0.5) se ha senso per l'unità di misura (es. kg, litri).
+
+    REGOLE MATEMATICHE FONDAMENTALI:
+    1. RICETTE E ASSEMBLAGGI: Se l'utente menziona la preparazione di un piatto (es. "Ho venduto 5 carbonare") o un assemblaggio/vendita (es. "ho venduto 2 kit"), STIMA le quantità degli ingredienti/componenti utilizzati in base all'inventario calcolando per il numero di porzioni/pezzi. Le quantità DEVONO ESSERE NUMERI DECIMALI (es. -0.25 per 250g se l'unità è in kg) o intere se in pezzi.
+    2. AZZERAMENTO ("Ho finito tutto il pomodoro"): Se l'utente dichiara di aver terminato o finito un prodotto, il valore di "quantityChange" DEVE essere 0 e "updateType" DEVE essere "absolute".
+    3. RIMANENZE ("Sono rimaste 5 bottiglie"): Se l'utente dichiara cosa vede fisicamente a scaffale (giacenza finale), "quantityChange" DEVE essere ESATTAMENTE il numero dichiarato dall'utente e "updateType" DEVE essere "absolute". (Es: se dice "ne sono rimaste 40", quantityChange: 40).
+    4. CONSUMO DIRETTO ("Ho consumato 3 pomodori" / "Ho venduto 1 scarpa"): Sottrai esattamente il numero indicato (quantityChange: -3).  
+    5. AGGIUNTE ("Ho ricevuto 10 kg di farina"): Aggiungi esattamente il numero indicato (quantityChange: +10).
+    6. COMUNICAZIONE AGGIORNAMENTO: Quando l'utente dichiara che un prodotto è finito o che ne è rimasta una certa quantità (casi 2 e 3), nel "replyText" NON dire "ho sottratto X quantità", ma COMUNICA DIRETTAMENTE che hai aggiornato la quantità a 0 o alla quantità dichiarata.
+
     Rispondi ESCLUSIVAMENTE con un oggetto JSON valido con questa struttura:
     {
       "operations": [
         {
           "productId": "id_del_prodotto",
           "productName": "Nome esatto del prodotto trovato",
-          "quantityChange": -0.25 // numero (anche decimale), negativo per prelievi, positivo per aggiunte
+          "quantityChange": -0.25, // numero (anche decimale), negativo per prelievi, positivo per aggiunte
+          "updateType": "absolute" // DEVE essere "absolute" nei casi 2 e 3 (azzeramento/rimanenze), oppure "relative" nei casi 1, 4 e 5 (consumi/aggiunte/ricette)
         }
       ],
-      "replyText": "Risposta cortese (es. 'Ho scalato gli ingredienti per 2 carbonare: 0.25 kg di guanciale e 0.2 kg di pecorino.')"
+      "replyText": "Risposta cortese (es. 'Ho scalato gli ingredienti per 5 carbonare' oppure 'Ok, ho aggiornato la scorta dei pomodori a 0, come richiesto.' oppure 'D'accordo, ho impostato le bottiglie rimanenti a 5.')"
     }
     Se un prodotto non è in inventario, ignoralo nelle operations ma menzionalo in replyText. Se l'intento non è chiaro, operations deve essere [].
     NON INCLUDERE TESTO FUORI DAL JSON.

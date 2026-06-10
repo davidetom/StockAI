@@ -8,7 +8,7 @@ import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { useAuth } from '../../../auth';
 import { analyzeInventoryFile, categorizeSingleProduct, generateInventoryTemplate, scanOnboardingReceipt, scanShelfInventory } from '../../ai';
-import { addMultipleProducts, addProduct, deleteProduct, emptyWarehouse, getProducts, updateProductDetails, updateProductSupplier, getSuppliers, updateSupplier } from '../../db';
+import { addMultipleProducts, addProduct, deleteProduct, emptyWarehouse, getProducts, updateProductDetails, updateProductSupplier, getSuppliers, updateSupplier, transferProductsSupplier } from '../../db';
 
 const ICON_MAP: Record<string, any> = {
   'baby-care': require('../../../assets/icons/baby-care.png'),
@@ -89,11 +89,13 @@ export default function WarehouseScreen() {
   const [supplierChannels, setSupplierChannels] = useState<Record<string, string>>({});
   const [supplierPhones, setSupplierPhones] = useState<Record<string, string>>({});
   const [supplierEmails, setSupplierEmails] = useState<Record<string, string>>({});
-  const [isChannelModalVisible, setIsChannelModalVisible] = useState(false);
-  const [activeSupplierForChannel, setActiveSupplierForChannel] = useState('');
-  const [modalChannel, setModalChannel] = useState('');
-  const [modalPhone, setModalPhone] = useState('');
-  const [modalEmail, setModalEmail] = useState('');
+  const [isEditSupplierModalVisible, setIsEditSupplierModalVisible] = useState(false);
+  const [isTransferModalVisible, setIsTransferModalVisible] = useState(false);
+  const [activeSupplierToEdit, setActiveSupplierToEdit] = useState('');
+  const [editSupplierChannel, setEditSupplierChannel] = useState('');
+  const [editSupplierPhone, setEditSupplierPhone] = useState('');
+  const [editSupplierEmail, setEditSupplierEmail] = useState('');
+  const [transferTargetSupplier, setTransferTargetSupplier] = useState('');
   const AVAILABLE_CHANNELS = ['WhatsApp', 'Email', 'Telefono', 'App B2B', 'Rappresentante', 'Altro'];
 
   const mergeAndDeduplicateItems = (existingItems: any[], newItems: any[]) => {
@@ -130,20 +132,54 @@ export default function WarehouseScreen() {
     }
   };
 
-  const openChannelModal = (supplierName: string) => {
-    setActiveSupplierForChannel(supplierName);
-    setModalChannel(supplierChannels[supplierName] || 'WhatsApp');
-    setModalPhone(supplierPhones[supplierName] || '');
-    setModalEmail(supplierEmails[supplierName] || '');
-    setIsChannelModalVisible(true);
+  const openSupplierEditModal = (supplierName: string) => {
+    setActiveSupplierToEdit(supplierName);
+    setEditSupplierChannel(supplierChannels[supplierName] || 'WhatsApp');
+    setEditSupplierPhone(supplierPhones[supplierName] || '');
+    setEditSupplierEmail(supplierEmails[supplierName] || '');
+    setIsEditSupplierModalVisible(true);
   };
 
-  const handleSaveChannel = async () => {
-    const finalPhone = (modalChannel === 'WhatsApp' || modalChannel === 'Telefono') ? modalPhone : '';
-    const finalEmail = (modalChannel === 'Email') ? modalEmail : '';
-    await updateSupplier(activeSupplierForChannel, modalChannel, finalPhone, finalEmail);
+  const openTransferModal = (supplierName: string) => {
+    setActiveSupplierToEdit(supplierName);
+    setTransferTargetSupplier('');
+    setIsTransferModalVisible(true);
+  };
+
+  const handleSaveSupplierInfo = async () => {
+    const finalPhone = (editSupplierChannel === 'WhatsApp' || editSupplierChannel === 'Telefono') ? editSupplierPhone : '';
+    const finalEmail = (editSupplierChannel === 'Email') ? editSupplierEmail : '';
+    await updateSupplier(activeSupplierToEdit, editSupplierChannel, finalPhone, finalEmail);
     await loadData();
-    setIsChannelModalVisible(false);
+    setIsEditSupplierModalVisible(false);
+  };
+
+  const handleTransferProducts = async () => {
+    if (!transferTargetSupplier || transferTargetSupplier === activeSupplierToEdit) {
+      Alert.alert("Errore", "Seleziona un fornitore di destinazione valido.");
+      return;
+    }
+    
+    Alert.alert(
+      "Trasferisci Prodotti",
+      `Vuoi davvero trasferire tutti i prodotti da "${activeSupplierToEdit}" a "${transferTargetSupplier}"?`,
+      [
+        { text: "Annulla", style: "cancel" },
+        { 
+          text: "Conferma", 
+          style: "destructive", 
+          onPress: async () => {
+            await transferProductsSupplier(activeSupplierToEdit, transferTargetSupplier);
+            // Init new supplier if it doesn't exist
+            if (!uniqueSuppliers.find(s => s.name === transferTargetSupplier)) {
+               await updateSupplier(transferTargetSupplier, 'WhatsApp', '', '');
+            }
+            await loadData();
+            setIsTransferModalVisible(false);
+          }
+        }
+      ]
+    );
   };
 
   // --- LOGICA SVUOTA FALDONI (SCAN MULTIPLO) ---
@@ -437,11 +473,7 @@ export default function WarehouseScreen() {
     Keyboard.dismiss();
     if (activeProductId && newSupplierName) {
       await updateProductSupplier(activeProductId, newSupplierName);
-      const finalPhone = (newSupplierChannel === 'WhatsApp' || newSupplierChannel === 'Telefono') ? newSupplierPhone : '';
-      const finalEmail = (newSupplierChannel === 'Email') ? newSupplierEmail : '';
-      await updateSupplier(newSupplierName, newSupplierChannel, finalPhone, finalEmail);
       await loadData();
-
       setIsSupplierModalVisible(false);
     }
   };
@@ -499,7 +531,7 @@ export default function WarehouseScreen() {
             <TouchableOpacity style={styles.actionBtnEdit} onPress={() => openEditProduct(item)}>
               <Ionicons name="pencil-outline" size={20} color="#333" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionBtnTruck} onPress={() => { setActiveProductId(item.id); setNewSupplierName(item.supplier_id); setNewSupplierChannel(supplierChannels[item.supplier_id] || 'WhatsApp'); setNewSupplierPhone(supplierPhones[item.supplier_id] || ''); setIsSupplierModalVisible(true); }}>
+            <TouchableOpacity style={styles.actionBtnTruck} onPress={() => { setActiveProductId(item.id); setNewSupplierName(item.supplier_id); setIsSupplierModalVisible(true); }}>
               <Ionicons name="bus-outline" size={20} color="#DB7F18" />
             </TouchableOpacity>
             <TouchableOpacity style={styles.actionBtnTrash} onPress={() => confirmDelete(item)}>
@@ -530,13 +562,21 @@ export default function WarehouseScreen() {
           <Text style={styles.productName}>{item.name}</Text>
           <Text style={styles.supplierText}>{item.count} prodotti associati</Text>
         </View>
-        <TouchableOpacity
-          style={{ padding: 8, backgroundColor: '#FFF4EB', borderRadius: 8, flexDirection: 'row', alignItems: 'center' }}
-          onPress={(e) => { e.stopPropagation(); openChannelModal(item.name); }}
-        >
-          <Ionicons name={channel === 'WhatsApp' ? "logo-whatsapp" : channel === 'Email' ? "mail-outline" : channel === 'Telefono' ? "call-outline" : "chatbubbles-outline"} size={16} color="#DB7F18" style={{ marginRight: 4 }} />
-          <Text style={{ color: '#DB7F18', fontSize: 12, fontWeight: 'bold' }}>{channel}</Text>
-        </TouchableOpacity>
+        {isEditMode ? (
+          <View style={styles.editActions}>
+            <TouchableOpacity style={styles.actionBtnTruck} onPress={(e) => { e.stopPropagation(); openSupplierEditModal(item.name); }}>
+              <Ionicons name="ellipsis-horizontal" size={20} color="#DB7F18" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionBtnTruck} onPress={(e) => { e.stopPropagation(); openTransferModal(item.name); }}>
+              <Ionicons name="arrow-forward-outline" size={20} color="#DB7F18" />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={{ padding: 8, backgroundColor: '#FFF4EB', borderRadius: 8, flexDirection: 'row', alignItems: 'center' }}>
+            <Ionicons name={channel === 'WhatsApp' ? "logo-whatsapp" : channel === 'Email' ? "mail-outline" : channel === 'Telefono' ? "call-outline" : "chatbubbles-outline"} size={16} color="#DB7F18" style={{ marginRight: 4 }} />
+            <Text style={{ color: '#DB7F18', fontSize: 12, fontWeight: 'bold' }}>{channel}</Text>
+          </View>
+        )}
       </TouchableOpacity>
     );
   };
@@ -551,8 +591,13 @@ export default function WarehouseScreen() {
 
           <Text style={styles.headerTitle}>{viewMode === 'suppliers' ? 'Fornitori' : 'Magazzino'}</Text>
 
-          {/* Sostituito il logout con un placeholder invisibile per tenere il titolo centrato */}
-          <View style={{ width: 28 }} />
+          {viewMode === 'suppliers' && isManager ? (
+            <TouchableOpacity onPress={() => setIsEditMode(!isEditMode)}>
+              <Ionicons name="pencil-outline" size={24} color={isEditMode ? "#DB7F18" : "#000"} />
+            </TouchableOpacity>
+          ) : (
+            <View style={{ width: 28 }} />
+          )}
         </View>
 
         {isMenuOpen && isManager && (
@@ -711,7 +756,7 @@ export default function WarehouseScreen() {
             </>
           )}
 
-          {isEditMode && (
+          {isEditMode && viewMode === 'products' && (
             <TouchableOpacity style={styles.addBtn} onPress={() => setIsAddModalVisible(true)}>
               <Ionicons name="add-circle-outline" size={24} color="#DB7F18" style={{ marginRight: 8 }} />
               <Text style={styles.addBtnText}>Aggiungi Nuovo Prodotto</Text>
@@ -948,28 +993,7 @@ export default function WarehouseScreen() {
             <Text style={[styles.label, { alignSelf: 'flex-start' }]}>Oppure scrivi un nome:</Text>
             <TextInput style={[styles.input, { width: '100%' }]} value={newSupplierName} onChangeText={setNewSupplierName} placeholder="Nome fornitore" returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} />
 
-            <Text style={[styles.label, { alignSelf: 'flex-start', marginTop: 8 }]}>Canale di trasmissione:</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ width: '100%', maxHeight: 45, marginBottom: 16 }}>
-              {AVAILABLE_CHANNELS.map(ch => (
-                <TouchableOpacity key={ch} style={[styles.supplierChip, newSupplierChannel === ch && styles.supplierChipActive]} onPress={() => setNewSupplierChannel(ch)}>
-                  <Text style={{ color: newSupplierChannel === ch ? '#8DA67F' : '#666' }}>{ch}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            
-            {(newSupplierChannel === 'Telefono' || newSupplierChannel === 'WhatsApp') && (
-               <View style={{width: '100%'}}>
-                 <Text style={[styles.label, { alignSelf: 'flex-start', marginTop: 0 }]}>Numero {newSupplierChannel}:</Text>
-                 <TextInput style={[styles.input, {width: '100%'}]} placeholder="+39 333 1234567" keyboardType="phone-pad" value={newSupplierPhone} onChangeText={setNewSupplierPhone} returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} />
-               </View>
-            )}
-
-            {newSupplierChannel === 'Email' && (
-               <View style={{width: '100%'}}>
-                 <Text style={[styles.label, { alignSelf: 'flex-start', marginTop: 0 }]}>Indirizzo Email:</Text>
-                 <TextInput style={[styles.input, {width: '100%'}]} placeholder="fornitore@mail.com" keyboardType="email-address" autoCapitalize="none" value={newSupplierEmail} onChangeText={setNewSupplierEmail} returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} />
-               </View>
-            )}
+            {/* Canali rimossi: la gestione dei dettagli fornitore è ora nella sezione Fornitori */}
 
             <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
               <TouchableOpacity style={[styles.btnOutline, { flex: 1 }]} onPress={() => setIsSupplierModalVisible(false)}><Text>Annulla</Text></TouchableOpacity>
@@ -981,80 +1005,85 @@ export default function WarehouseScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* --- MODALE CAMBIA CANALE TRASMISSIONE --- */}
-      <Modal visible={isChannelModalVisible} transparent animationType="fade">
+      {/* --- MODALE MODIFICA FORNITORE (SOLO INFO) --- */}
+      <Modal visible={isEditSupplierModalVisible} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView style={styles.modalContainer}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => setIsEditSupplierModalVisible(false)}><Ionicons name="close" size={28} color="#000" /></TouchableOpacity>
+              <Text style={styles.headerTitle}>Gestisci Fornitore</Text>
+              <View style={{ width: 28 }} />
+            </View>
+            <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
+              
+              <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 16 }}>
+                Dettagli di contatto per: {activeSupplierToEdit}
+              </Text>
+
+              <Text style={[styles.label, { marginTop: 0 }]}>Canale di trasmissione</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ width: '100%', maxHeight: 45, marginBottom: 16 }}>
+                {AVAILABLE_CHANNELS.map(ch => (
+                  <TouchableOpacity key={ch} style={[styles.supplierChip, editSupplierChannel === ch && styles.supplierChipActive]} onPress={() => setEditSupplierChannel(ch)}>
+                    <Text style={{ color: editSupplierChannel === ch ? '#8DA67F' : '#666' }}>{ch}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              
+              {(editSupplierChannel === 'Telefono' || editSupplierChannel === 'WhatsApp') && (
+                 <View style={{width: '100%', marginBottom: 16}}>
+                   <Text style={[styles.label, { marginTop: 0 }]}>Numero {editSupplierChannel}:</Text>
+                   <TextInput style={styles.input} placeholder="+39 333 1234567" keyboardType="phone-pad" value={editSupplierPhone} onChangeText={setEditSupplierPhone} returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} />
+                 </View>
+              )}
+
+              {editSupplierChannel === 'Email' && (
+                 <View style={{width: '100%', marginBottom: 16}}>
+                   <Text style={[styles.label, { marginTop: 0 }]}>Indirizzo Email:</Text>
+                   <TextInput style={styles.input} placeholder="fornitore@mail.com" keyboardType="email-address" autoCapitalize="none" value={editSupplierEmail} onChangeText={setEditSupplierEmail} returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} />
+                 </View>
+              )}
+
+              <TouchableOpacity style={[styles.btnPrimaryFull, { marginTop: 0, marginBottom: 32 }]} onPress={handleSaveSupplierInfo}>
+                <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16 }}>Salva Dettagli Contatto</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* --- MODALE TRASFERISCI PRODOTTI --- */}
+      <Modal visible={isTransferModalVisible} transparent animationType="fade">
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }}>
           <TouchableOpacity activeOpacity={1} style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }} onPress={() => Keyboard.dismiss()}>
             <TouchableWithoutFeedback>
               <View style={styles.modalSmallBox}>
-                <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 16, textAlign: 'center' }}>
-                  Mezzo di trasmissione
+                <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 16, textAlign: 'center' }}>Trasferisci Prodotti</Text>
+                
+                <Text style={{ fontSize: 14, color: '#666', marginBottom: 16, textAlign: 'center' }}>
+                  Sposta tutti i prodotti associati a "{activeSupplierToEdit}" ad un altro fornitore. Se "{activeSupplierToEdit}" rimarrà vuoto, verrà eliminato.
                 </Text>
-              <Text style={{ fontSize: 14, color: '#666', marginBottom: 16, textAlign: 'center' }}>
-                Seleziona il canale predefinito per comunicare con: {activeSupplierForChannel}
-              </Text>
 
-              <ScrollView style={{ width: '100%', maxHeight: 300, marginBottom: 16 }}>
-                {AVAILABLE_CHANNELS.map(ch => {
-                  const isSelected = modalChannel === ch;
-                  return (
-                    <View key={ch}>
-                      <TouchableOpacity
-                        style={{
-                          padding: 16,
-                          borderRadius: 8,
-                          borderWidth: 1,
-                          borderColor: isSelected ? '#8DA67F' : '#EAEAEA',
-                          backgroundColor: isSelected ? '#F4F7F2' : '#FFF',
-                          marginBottom: isSelected && ch === 'Telefono' ? 0 : 8,
-                          borderBottomLeftRadius: isSelected && ch === 'Telefono' ? 0 : 8,
-                          borderBottomRightRadius: isSelected && ch === 'Telefono' ? 0 : 8,
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          justifyContent: 'space-between'
-                        }}
-                        onPress={() => setModalChannel(ch)}
-                      >
-                        <Text style={{ color: isSelected ? '#8DA67F' : '#333', fontWeight: isSelected ? 'bold' : 'normal' }}>{ch}</Text>
-                        {isSelected && <Ionicons name="checkmark-circle" size={20} color="#8DA67F" />}
-                      </TouchableOpacity>
-                      {isSelected && (ch === 'Telefono' || ch === 'WhatsApp') && (
-                        <View style={{ backgroundColor: '#F4F7F2', padding: 16, borderBottomLeftRadius: 8, borderBottomRightRadius: 8, marginBottom: 8, borderWidth: 1, borderTopWidth: 0, borderColor: '#8DA67F' }}>
-                          <Text style={[styles.label, {marginTop: 0}]}>Numero di {ch}:</Text>
-                          <TextInput 
-                            style={styles.input} 
-                            placeholder="+39 333 1234567" 
-                            keyboardType="phone-pad"
-                            value={modalPhone}
-                            onChangeText={setModalPhone}
-                          />
-                        </View>
-                      )}
-                      {isSelected && ch === 'Email' && (
-                        <View style={{ backgroundColor: '#F4F7F2', padding: 16, borderBottomLeftRadius: 8, borderBottomRightRadius: 8, marginBottom: 8, borderWidth: 1, borderTopWidth: 0, borderColor: '#8DA67F' }}>
-                          <Text style={[styles.label, {marginTop: 0}]}>Indirizzo Email:</Text>
-                          <TextInput 
-                            style={styles.input} 
-                            placeholder="fornitore@mail.com" 
-                            keyboardType="email-address"
-                            autoCapitalize="none"
-                            value={modalEmail}
-                            onChangeText={setModalEmail}
-                          />
-                        </View>
-                      )}
-                    </View>
-                  );
-                })}
-              </ScrollView>
+                <Text style={[styles.label, { alignSelf: 'flex-start', marginTop: 0 }]}>Scegli esistente:</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ width: '100%', maxHeight: 45, marginBottom: 16 }}>
+                  {uniqueSuppliers.filter(s => s.name !== activeSupplierToEdit).map(s => (
+                    <TouchableOpacity key={s.name} style={[styles.supplierChip, transferTargetSupplier === s.name && styles.supplierChipActive]} onPress={() => setTransferTargetSupplier(s.name)}>
+                      <Text style={{ color: transferTargetSupplier === s.name ? '#8DA67F' : '#666' }}>{s.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
 
-              <TouchableOpacity style={[styles.btnPrimaryFull, { width: '100%', marginTop: 0, marginBottom: 12 }]} onPress={handleSaveChannel}>
-                <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Salva Preferenza</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.btnOutline, { width: '100%' }]} onPress={() => setIsChannelModalVisible(false)}>
-                <Text>Annulla</Text>
-              </TouchableOpacity>
-            </View>
+                <Text style={[styles.label, { alignSelf: 'flex-start' }]}>Oppure scrivi un nome nuovo:</Text>
+                <TextInput style={[styles.input, { width: '100%' }]} value={transferTargetSupplier} onChangeText={setTransferTargetSupplier} placeholder="Nome fornitore" returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} />
+
+                <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+                  <TouchableOpacity style={[styles.btnOutline, { flex: 1 }]} onPress={() => setIsTransferModalVisible(false)}>
+                    <Text>Annulla</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.btnPrimaryFull, { flex: 1, marginTop: 0, backgroundColor: '#D93025', opacity: transferTargetSupplier ? 1 : 0.5 }]} onPress={handleTransferProducts} disabled={!transferTargetSupplier}>
+                    <Text style={{ color: '#FFF' }}>Trasferisci</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             </TouchableWithoutFeedback>
           </TouchableOpacity>
         </KeyboardAvoidingView>
