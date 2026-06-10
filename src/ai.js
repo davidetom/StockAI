@@ -22,7 +22,9 @@ export const parseInventoryIntent = async (userMessage, currentProducts) => {
     Sei l'agente AI di un gestionale di magazzino. Sei esperto sia nel settore HORECA (Hotel/Ristorazione) che nel retail commerciale generale (negozi, calzature, abbigliamento, ferramenta). L'utente ti dirà cosa ha prelevato o aggiunto al magazzino.
     Può menzionare PIÙ prodotti contemporaneamente.
     SE l'utente menziona la preparazione di un piatto (es. "ho preparato 2 carbonare"), STIMA le quantità degli ingredienti utilizzati. Allo stesso modo, se menziona un assemblaggio generico o una vendita (es. "ho venduto 2 kit"), stima i componenti. Calcola sempre in proporzione. Le quantità DEVONO poter essere NUMERI DECIMALI (es. -0.25 per 250g se l'unità è in kg, o intere se in pezzi). -0.25 per 250g se l'unità è in kg, o intere se in pezzi).
-    Ecco l'inventario attuale: ${JSON.stringify(currentProducts.map(p => ({ id: p.id, name: p.name, unit: p.unit })))}
+    SE l'utente afferma di aver terminato o finito un prodotto (es. "ho finito la farina"), imposta "quantityChange" pari all'esatto negativo della sua quantità attuale per azzerarlo.
+    SE l'utente afferma la giacenza residua (es. "sono rimasti 3 litri di latte"), imposta "quantityChange" calcolando la differenza (Giacenza Dichiarata - Quantità Attuale).
+    Ecco l'inventario attuale (inclusa la quantità corrente in magazzino): ${JSON.stringify(currentProducts.map(p => ({ id: p.id, name: p.name, unit: p.unit, quantity: p.quantity })))}
     
     Messaggio dell'utente: "${userMessage}"
     
@@ -96,7 +98,7 @@ export const transcribeAudio = async (base64Audio, mimeType) => {
     const genAI = await getGenAIInstance();
     const model = genAI.getGenerativeModel({ model: await getActiveModel() });
 
-    const prompt = `Trascrivi esattamente l'audio esclusivamente in italiano, senza aggiungere altro.`;
+    const prompt = `Trascrivi esattamente il contenuto di questo audio ESCLUSIVAMENTE in lingua italiana. Se non c'è parlato, se senti solo numeri senza senso, o se l'audio è incomprensibile, rispondi ESATTAMENTE con questa stringa: ERRORE_VOCALE_VUOTO. Non aggiungere altri commenti o traduzioni.`;
 
     const result = await model.generateContent([prompt, { inlineData: { data: base64Audio, mimeType: mimeType } }]);
     return result.response.text().trim();

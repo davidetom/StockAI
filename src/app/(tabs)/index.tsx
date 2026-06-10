@@ -7,11 +7,12 @@ import { parseInventoryIntent, transcribeAudio } from '../../ai';
 import { getProducts, updateProductStock } from '../../db';
 
 export default function ChatScreen() {
-  const [messages, setMessages] = useState([{ id: '0', text: 'Ciao! Cosa hai prelevato o aggiunto al magazzino? Puoi dirmi più cose insieme!', sender: 'ai' }]);
+  const [messages, setMessages] = useState([{ id: '0', text: 'Ciao! Ci sono novità?', sender: 'ai' }]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  
+
   const [recording, setRecording] = useState<Audio.Recording | undefined>();
+  const [recordingDuration, setRecordingDuration] = useState(0);
   const [isTranscribing, setIsTranscribing] = useState(false);
 
   // pendingAction contiene l'array di operazioni
@@ -27,7 +28,7 @@ export default function ChatScreen() {
 
     const currentProducts = await getProducts();
     const aiResponse = await parseInventoryIntent(text, currentProducts);
-    
+
     if (aiResponse?.operations && aiResponse.operations.length > 0) {
       const opsWithUnits = aiResponse.operations.map((op: any) => {
         const matched = currentProducts.find((p: any) => p.id === op.productId);
@@ -48,29 +49,54 @@ export default function ChatScreen() {
       await Audio.requestPermissionsAsync();
       await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
       const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      recording.setProgressUpdateInterval(1000);
+      recording.setOnRecordingStatusUpdate((status) => {
+        if (status.isRecording) {
+          setRecordingDuration(Math.floor(status.durationMillis / 1000));
+        }
+      });
       setRecording(recording);
     } catch (err) {
       console.error("Errore avvio microfono", err);
     }
   };
 
-  const stopRecording = async () => {
+  const cancelRecording = async () => {
     if (!recording) return;
-    setIsTranscribing(true); 
     setRecording(undefined);
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
+    setRecordingDuration(0);
     try {
       await recording.stopAndUnloadAsync();
       await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
-      
+    } catch (e) { console.error(e); }
+  };
+
+  const formatTime = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  };
+
+  const stopRecording = async () => {
+    setRecordingDuration(0);
+    if (!recording) return;
+    setIsTranscribing(true);
+    setRecording(undefined);
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    try {
+      await recording.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+
       const uri = recording.getURI();
       if (uri) {
         const base64Audio = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
         const mimeType = Platform.OS === 'ios' ? 'audio/m4a' : 'audio/mp4';
         const transcribedText = await transcribeAudio(base64Audio, mimeType);
-        
-        if (transcribedText) {
+
+        if (transcribedText === 'ERRORE_VOCALE_VUOTO') {
+          setMessages(prev => [...prev, { id: Date.now().toString(), text: "Il vocale era vuoto o incomprensibile! Prova a registrare di nuovo.", sender: 'ai' }]);
+        } else if (transcribedText) {
           await processUserIntent(transcribedText, true);
         } else {
           setMessages(prev => [...prev, { id: Date.now().toString(), text: "Scusa, non ho compreso bene l'audio.", sender: 'ai' }]);
@@ -85,7 +111,7 @@ export default function ChatScreen() {
   // AGGIUNTA GUARDIA DI SICUREZZA
   const handleConfirm = async () => {
     if (!pendingAction || !pendingAction.operations) return;
-    
+
     setIsLoading(true); // Blocca la UI durante l'aggiornamento multiplo
     for (const op of pendingAction.operations) {
       await updateProductStock(op.productId, op.quantityChange);
@@ -98,7 +124,7 @@ export default function ChatScreen() {
   // AGGIUNTA GUARDIA DI SICUREZZA
   const openEditModal = () => {
     if (!pendingAction || !pendingAction.operations) return;
-    
+
     setEditOperations([...pendingAction.operations]);
     setIsEditModalVisible(true);
   };
@@ -123,29 +149,34 @@ export default function ChatScreen() {
 
   const renderMessage = ({ item }: { item: any }) => (
     <View style={[styles.bubble, item.sender === 'user' ? styles.userBubble : styles.aiBubble]}>
-      {item.isAudio && <Ionicons name="mic-outline" size={16} color="#FFF" style={{marginBottom: 4}} />}
+      {item.isAudio && <Ionicons name="mic-outline" size={16} color="#FFF" style={{ marginBottom: 4 }} />}
       <Text style={item.sender === 'user' ? styles.userText : styles.aiText}>{item.text}</Text>
     </View>
   );
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}><Text style={styles.headerTitle}>NiNo</Text></View>
+      <View style={styles.header}>
+        <Text>
+          <Text style={styles.headerTitlePrefix}>L'Assistente </Text>
+          <Text style={styles.headerTitle}>NiNo</Text>
+        </Text>
+      </View>
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <Image source={require('../../../assets/images/nino.png')} style={styles.bgImage} />
-        
+
         <FlatList data={messages} keyExtractor={item => item.id} renderItem={renderMessage} contentContainerStyle={styles.chatContainer} />
 
         {/* CARTA DI CONFERMA MULTIPLA - AGGIUNTO CONTROLLO DI SICUREZZA EXTRA */}
         {pendingAction && pendingAction.operations && (
           <View style={styles.confirmationCard}>
             <Text style={styles.confirmText}>{pendingAction.text}</Text>
-            
+
             {pendingAction.operations.map((op: any, idx: number) => (
               <View key={idx} style={styles.confirmHighlightBox}>
-                <Ionicons name="cube-outline" size={18} color="#DB7F18" style={{marginRight: 6}} />
+                <Ionicons name="cube-outline" size={18} color="#DB7F18" style={{ marginRight: 6 }} />
                 <Text style={styles.confirmHighlightText}>{op.productName}</Text>
-                <Text style={[styles.confirmHighlightQty, { color: op.quantityChange > 0 ? '#1E8E3E' : '#D93025'}]}>
+                <Text style={[styles.confirmHighlightQty, { color: op.quantityChange > 0 ? '#1E8E3E' : '#D93025' }]}>
                   {op.quantityChange > 0 ? '+' : ''}{op.quantityChange} {op.unit}
                 </Text>
               </View>
@@ -166,15 +197,32 @@ export default function ChatScreen() {
         {/* INPUT */}
         {!pendingAction && (
           <View style={styles.inputContainer}>
-            <TextInput style={styles.input} placeholder="Es. ho preso 2 Gin e 1 Tonica..." value={inputText} onChangeText={setInputText} editable={!recording && !isTranscribing} />
-            {inputText.trim().length > 0 ? (
-              <TouchableOpacity style={[styles.sendButton, isLoading && styles.sendButtonDisabled]} onPress={handleSendText} disabled={isLoading}>
-                {isLoading ? <ActivityIndicator color="#FFF" size="small" /> : <Ionicons name="send" size={18} color="#FFF" />}
-              </TouchableOpacity>
+            {recording ? (
+              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
+                <TouchableOpacity onPress={cancelRecording} style={{ padding: 12 }}>
+                  <Ionicons name="trash-outline" size={24} color="#D93025" />
+                </TouchableOpacity>
+                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#D93025', marginRight: 8 }} />
+                  <Text style={{ fontSize: 16, fontWeight: 'bold' }}>{formatTime(recordingDuration)}</Text>
+                </View>
+                <TouchableOpacity onPress={stopRecording} style={{ backgroundColor: '#DB7F18', borderRadius: 24, width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="send" size={20} color="#FFF" style={{ marginLeft: 4 }} />
+                </TouchableOpacity>
+              </View>
             ) : (
-              <TouchableOpacity style={[styles.sendButton, recording ? styles.recordingBtn : null]} onPress={recording ? stopRecording : startRecording} disabled={isTranscribing}>
-                {isTranscribing ? <ActivityIndicator color="#FFF" size="small" /> : <Ionicons name={recording ? "stop" : "mic"} size={22} color="#FFF" />}
-              </TouchableOpacity>
+              <>
+                <TextInput style={styles.input} placeholder="Es. ho preso 2 Gin e 1 Tonica..." value={inputText} onChangeText={setInputText} editable={!isTranscribing} />
+                {inputText.trim().length > 0 ? (
+                  <TouchableOpacity style={[styles.sendButton, isLoading && styles.sendButtonDisabled]} onPress={handleSendText} disabled={isLoading}>
+                    {isLoading ? <ActivityIndicator color="#FFF" size="small" /> : <Ionicons name="send" size={18} color="#FFF" style={{ marginLeft: 4 }} />}
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity style={styles.sendButton} onPress={startRecording} disabled={isTranscribing}>
+                    {isTranscribing ? <ActivityIndicator color="#FFF" size="small" /> : <Ionicons name="mic" size={22} color="#FFF" />}
+                  </TouchableOpacity>
+                )}
+              </>
             )}
           </View>
         )}
@@ -185,7 +233,7 @@ export default function ChatScreen() {
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>Correggi Quantità</Text>
-              <ScrollView style={{maxHeight: 300}}>
+              <ScrollView style={{ maxHeight: 300 }}>
                 {editOperations.map((op, idx) => (
                   <View key={idx} style={styles.editRow}>
                     <Text style={styles.editRowText}>{op.productName}</Text>
@@ -195,8 +243,8 @@ export default function ChatScreen() {
                         updated[idx].quantityChange = parseFloat((Number(updated[idx].quantityChange) - 1).toFixed(2));
                         setEditOperations(updated);
                       }}><Text style={styles.stepperBtnText}>-</Text></TouchableOpacity>
-                      <TextInput 
-                        style={[styles.stepperValue, { padding: 0, minWidth: 40 }]} 
+                      <TextInput
+                        style={[styles.stepperValue, { padding: 0, minWidth: 40 }]}
                         keyboardType="numbers-and-punctuation"
                         value={String(op.quantityChange)}
                         onChangeText={(t) => setEditQty(idx, t)}
@@ -223,8 +271,9 @@ export default function ChatScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#F8F5E6' },
-  header: { padding: 16, backgroundColor: '#DB7F18', borderBottomWidth: 1, borderColor: '#eee', alignItems: 'center' },
-  headerTitle: { fontSize: 32, fontWeight: '300', color: '#FFFFFF', fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontStyle: 'italic' },
+  header: { padding: 16, backgroundColor: '#DB7F18', alignItems: 'center', justifyContent: 'center', paddingTop: Platform.OS === 'ios' ? 0 : 16 },
+  headerTitlePrefix: { fontSize: 24, fontWeight: '500', color: '#FFFFFF' },
+  headerTitle: { fontSize: 34, fontWeight: '300', color: '#FFFFFF', fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontStyle: 'italic' },
   container: { flex: 1 },
   chatContainer: { padding: 16, flexGrow: 1, justifyContent: 'flex-end' },
   bubble: { padding: 14, borderRadius: 20, marginBottom: 12, maxWidth: '85%' },
@@ -232,7 +281,7 @@ const styles = StyleSheet.create({
   aiBubble: { backgroundColor: '#FFFFFF', alignSelf: 'flex-start', borderBottomLeftRadius: 4, borderWidth: 1, borderColor: '#EAEAEA' },
   userText: { color: '#FFFFFF', fontSize: 15, lineHeight: 22 },
   aiText: { color: '#333333', fontSize: 15, lineHeight: 22 },
-  
+
   inputContainer: { flexDirection: 'row', padding: 12, paddingBottom: Platform.OS === 'ios' ? 12 : 24, backgroundColor: '#FFFFFF', borderTopWidth: 1, borderColor: '#EAEAEA', alignItems: 'center' },
   input: { flex: 1, backgroundColor: '#F0F2F5', borderRadius: 24, paddingHorizontal: 18, paddingTop: 12, paddingBottom: 12, marginRight: 12, fontSize: 15 },
   sendButton: { backgroundColor: '#DB7F18', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
