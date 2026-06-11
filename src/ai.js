@@ -40,6 +40,7 @@ export const parseInventoryIntent = async (userMessage, currentProducts) => {
     4. CONSUMO DIRETTO ("Ho consumato 3 pomodori" / "Ho venduto 1 scarpa"): Sottrai esattamente il numero indicato (quantityChange: -3).  
     5. AGGIUNTE ("Ho ricevuto 10 kg di farina"): Aggiungi esattamente il numero indicato (quantityChange: +10).
     6. COMUNICAZIONE AGGIORNAMENTO: Quando l'utente dichiara che un prodotto è finito o che ne è rimasta una certa quantità (casi 2 e 3), nel "replyText" NON dire "ho sottratto X quantità", ma COMUNICA DIRETTAMENTE che hai aggiornato la quantità a 0 o alla quantità dichiarata.
+    7. DOMANDE SULLA GIACENZA: Se l'utente fa una DOMANDA per sapere la quantità attuale di un prodotto (es. "quante bottiglie di acqua frizzante abbiamo?" o "abbiamo pomodori?"), cerca il prodotto nell'inventario fornito. In questo caso l'array "operations" DEVE essere VUOTO []. Nel campo "replyText", rispondi indicando chiaramente la quantità presente, ad es. "Nel magazzino sono presenti X [unità] di [Nome Prodotto]". Se il prodotto non c'è in inventario, dillo chiaramente nel "replyText".
 
     Rispondi ESCLUSIVAMENTE con un oggetto JSON valido con questa struttura:
     {
@@ -51,9 +52,9 @@ export const parseInventoryIntent = async (userMessage, currentProducts) => {
           "updateType": "absolute" // DEVE essere "absolute" nei casi 2 e 3 (azzeramento/rimanenze), oppure "relative" nei casi 1, 4 e 5 (consumi/aggiunte/ricette)
         }
       ],
-      "replyText": "Risposta cortese (es. 'Ho scalato gli ingredienti per 5 carbonare' oppure 'Ok, ho aggiornato la scorta dei pomodori a 0, come richiesto.' oppure 'D'accordo, ho impostato le bottiglie rimanenti a 5.')"
+      "replyText": "Risposta cortese (es. 'Ho scalato gli ingredienti per 5 carbonare' oppure 'Ok, ho aggiornato la scorta dei pomodori a 0, come richiesto.' oppure 'Nel magazzino sono presenti 10 bottiglie di Acqua Frizzante.')"
     }
-    Se un prodotto non è in inventario, ignoralo nelle operations ma menzionalo in replyText. Se l'intento non è chiaro, operations deve essere [].
+    Se un prodotto non è in inventario e l'utente voleva aggiornarlo, ignoralo nelle operations ma menzionalo in replyText. Se l'intento non è chiaro, operations deve essere [].
     NON INCLUDERE TESTO FUORI DAL JSON.
     `;
 

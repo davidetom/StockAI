@@ -1,13 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { ActivityIndicator, FlatList, Image, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { parseInventoryIntent, transcribeAudio } from '../../ai';
 import { getProducts, updateProductStock } from '../../db';
 
 export default function ChatScreen() {
-  const [messages, setMessages] = useState([{ id: '0', text: 'Ciao! Ci sono novità?', sender: 'ai' }]);
+  const flatListRef = useRef<FlatList>(null);
+  const [messages, setMessages] = useState([{ id: '0', text: 'Ciao! Sono NiNo. Puoi scrivermi o mandarmi un vocale per aggiornare le quantità di uno o più prodotti, oppure per chiedermi le giacenze attuali nel magazzino.', sender: 'ai' }]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -178,7 +179,15 @@ export default function ChatScreen() {
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <Image source={require('../../../assets/images/nino.png')} style={styles.bgImage} />
 
-        <FlatList data={messages} keyExtractor={item => item.id} renderItem={renderMessage} contentContainerStyle={styles.chatContainer} />
+        <FlatList 
+          ref={flatListRef}
+          data={messages} 
+          keyExtractor={item => item.id} 
+          renderItem={renderMessage} 
+          contentContainerStyle={styles.chatContainer} 
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
+        />
 
         {/* CARTA DI CONFERMA MULTIPLA - AGGIUNTO CONTROLLO DI SICUREZZA EXTRA */}
         {pendingAction && pendingAction.operations && (
