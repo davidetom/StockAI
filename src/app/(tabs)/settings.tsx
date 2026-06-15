@@ -144,8 +144,11 @@ export default function SettingsScreen() {
         )}
       </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView 
+        contentContainerStyle={styles.container}
+        automaticallyAdjustKeyboardInsets={true}
+        keyboardShouldPersistTaps="handled"
+      >
 
           {/* SEZIONE 1: INFO ACCOUNT CON DATI REALI SUPABASE */}
           <Text style={styles.sectionTitle}>IL TUO ACCOUNT</Text>
@@ -307,8 +310,7 @@ export default function SettingsScreen() {
             <Text style={styles.btnLogoutText}>Disconnetti Account</Text>
           </TouchableOpacity>
 
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </ScrollView>
     </SafeAreaView>
   );
 }

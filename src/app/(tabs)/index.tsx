@@ -2,7 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import React, { useState, useRef } from 'react';
-import { ActivityIndicator, FlatList, Image, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { parseInventoryIntent, transcribeAudio } from '../../ai';
 import { getProducts, updateProductStock } from '../../db';
 
@@ -20,6 +22,23 @@ export default function ChatScreen() {
   const [pendingAction, setPendingAction] = useState<any>(null);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [editOperations, setEditOperations] = useState<any[]>([]);
+
+  const insets = useSafeAreaInsets();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  React.useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    const showSub = Keyboard.addListener('keyboardWillShow', (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener('keyboardWillHide', () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const processUserIntent = async (text: string, isAudioMsg: boolean = false) => {
     const userMsg = { id: Date.now().toString(), text: text, sender: 'user', isAudio: isAudioMsg };
@@ -110,11 +129,10 @@ export default function ChatScreen() {
     setIsTranscribing(false);
   };
 
-  // AGGIUNTA GUARDIA DI SICUREZZA
   const handleConfirm = async () => {
     if (!pendingAction || !pendingAction.operations) return;
 
-    setIsLoading(true); // Blocca la UI durante l'aggiornamento multiplo
+    setIsLoading(true);
     for (const op of pendingAction.operations) {
       const diff = op.updateType === 'absolute' ? (Number(op.quantityChange) - Number(op.currentQty)) : Number(op.quantityChange);
       await updateProductStock(op.productId, diff);
@@ -124,7 +142,6 @@ export default function ChatScreen() {
     setIsLoading(false);
   };
 
-  // AGGIUNTA GUARDIA DI SICUREZZA
   const openEditModal = () => {
     if (!pendingAction || !pendingAction.operations) return;
 
@@ -141,13 +158,12 @@ export default function ChatScreen() {
     const updated = [...editOperations];
     let sanitized = val.replace(/[^0-9.,-]/g, '');
     if (updated[index].updateType === 'absolute') {
-      sanitized = sanitized.replace('-', ''); // Previene il meno se è assoluto
+      sanitized = sanitized.replace('-', '');
     }
     updated[index].editValue = sanitized;
     setEditOperations(updated);
   };
 
-  // AGGIUNTA GUARDIA DI SICUREZZA
   const saveCorrections = () => {
     if (!pendingAction) return;
     const finalOps = editOperations.map(op => {
@@ -169,27 +185,30 @@ export default function ChatScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        <Text>
-          <Text style={styles.headerTitlePrefix}>L'Assistente </Text>
-          <Text style={styles.headerTitle}>NiNo</Text>
-        </Text>
-      </View>
-      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <Image source={require('../../../assets/images/nino.png')} style={styles.bgImage} />
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={0} style={{ flex: 1, backgroundColor: '#F8F5E6' }}>
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <View style={styles.container}>
+        <View style={styles.header}>
+          <Text>
+            <Text style={styles.headerTitlePrefix}>L'Assistente </Text>
+            <Text style={styles.headerTitle}>NiNo</Text>
+          </Text>
+        </View>
+
+        <View style={styles.container}>
+          <Image source={require('../../../assets/images/nino.png')} style={styles.bgImage} />
 
         <FlatList 
           ref={flatListRef}
           data={messages} 
           keyExtractor={item => item.id} 
           renderItem={renderMessage} 
+          style={{ flex: 1 }}
           contentContainerStyle={styles.chatContainer} 
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
           onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
         />
 
-        {/* CARTA DI CONFERMA MULTIPLA - AGGIUNTO CONTROLLO DI SICUREZZA EXTRA */}
         {pendingAction && pendingAction.operations && (
           <View style={styles.confirmationCard}>
             <Text style={styles.confirmText}>{pendingAction.text}</Text>
@@ -222,7 +241,6 @@ export default function ChatScreen() {
           </View>
         )}
 
-        {/* INPUT */}
         {!pendingAction && (
           <View style={styles.inputContainer}>
             {recording ? (
@@ -254,11 +272,11 @@ export default function ChatScreen() {
             )}
           </View>
         )}
-      </KeyboardAvoidingView>
+        </View>
+      </View>
 
-      <Modal visible={isEditModalVisible} transparent animationType="slide">
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={styles.modalOverlay}>
+    <Modal visible={isEditModalVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>Correggi Quantità</Text>
               <ScrollView style={{ maxHeight: 300 }}>
@@ -293,9 +311,9 @@ export default function ChatScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </KeyboardAvoidingView>
       </Modal>
-    </SafeAreaView>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -312,7 +330,7 @@ const styles = StyleSheet.create({
   userText: { color: '#FFFFFF', fontSize: 15, lineHeight: 22 },
   aiText: { color: '#333333', fontSize: 15, lineHeight: 22 },
 
-  inputContainer: { flexDirection: 'row', padding: 12, paddingBottom: Platform.OS === 'ios' ? 12 : 24, backgroundColor: '#FFFFFF', borderTopWidth: 1, borderColor: '#EAEAEA', alignItems: 'center' },
+  inputContainer: { flexDirection: 'row', padding: 12, paddingBottom: Platform.OS === 'ios' ? 24 : 24, backgroundColor: '#FFFFFF', borderTopWidth: 1, borderColor: '#EAEAEA', alignItems: 'center' },
   input: { flex: 1, backgroundColor: '#F0F2F5', borderRadius: 24, paddingHorizontal: 18, paddingTop: 12, paddingBottom: 12, marginRight: 12, fontSize: 15 },
   sendButton: { backgroundColor: '#DB7F18', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
   sendButtonDisabled: { backgroundColor: '#6C757D' },

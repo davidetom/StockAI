@@ -874,8 +874,8 @@ export default function WarehouseScreen() {
 
       {/* --- MODALE AGGIUNGI PRODOTTO --- */}
       <Modal visible={isAddModalVisible} animationType="slide" presentationStyle="pageSheet">
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <SafeAreaView style={styles.modalContainer}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
             <View style={styles.modalHeader}>
               <TouchableOpacity onPress={() => setIsAddModalVisible(false)}><Ionicons name="close" size={28} color="#000" /></TouchableOpacity>
               <Text style={styles.headerTitle}>Nuovo Prodotto</Text>
@@ -951,14 +951,14 @@ export default function WarehouseScreen() {
               {isUpdatingCategories ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16 }}>Salva e Analizza (AI)</Text>}
             </TouchableOpacity>
           </ScrollView>
-          </KeyboardAvoidingView>
         </SafeAreaView>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* --- MODALE MODIFICA DETTAGLI --- */}
       <Modal visible={isEditProductModalVisible} animationType="slide" presentationStyle="pageSheet">
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <SafeAreaView style={styles.modalContainer}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
             <View style={styles.modalHeader}>
               <TouchableOpacity onPress={() => setIsEditProductModalVisible(false)}><Ionicons name="close" size={28} color="#000" /></TouchableOpacity>
               <Text style={styles.headerTitle}>Modifica Dettagli</Text>
@@ -986,14 +986,14 @@ export default function WarehouseScreen() {
               <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16 }}>Salva Modifiche</Text>
             </TouchableOpacity>
           </ScrollView>
-          </KeyboardAvoidingView>
         </SafeAreaView>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* --- MODALE CAMBIA FORNITORE --- */}
       <Modal visible={isSupplierModalVisible} transparent animationType="fade">
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <TouchableOpacity activeOpacity={1} style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }} onPress={() => Keyboard.dismiss()}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center' }} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets={true}>
             <TouchableWithoutFeedback>
               <View style={styles.modalSmallBox}>
                 <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 16 }}>Modifica Fornitore</Text>
@@ -1010,22 +1010,20 @@ export default function WarehouseScreen() {
             <Text style={[styles.label, { alignSelf: 'flex-start' }]}>Oppure scrivi un nome:</Text>
             <TextInput style={[styles.input, { width: '100%' }]} value={newSupplierName} onChangeText={setNewSupplierName} placeholder="Nome fornitore" returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} />
 
-            {/* Canali rimossi: la gestione dei dettagli fornitore è ora nella sezione Fornitori */}
-
             <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
               <TouchableOpacity style={[styles.btnOutline, { flex: 1 }]} onPress={() => setIsSupplierModalVisible(false)}><Text>Annulla</Text></TouchableOpacity>
               <TouchableOpacity style={[styles.btnPrimaryFull, { flex: 1, marginTop: 0 }]} onPress={handleUpdateSupplier}><Text style={{ color: '#FFF' }}>Salva</Text></TouchableOpacity>
             </View>
           </View>
           </TouchableWithoutFeedback>
-        </TouchableOpacity>
-        </KeyboardAvoidingView>
+          </ScrollView>
+        </View>
       </Modal>
 
       {/* --- MODALE MODIFICA FORNITORE (SOLO INFO) --- */}
       <Modal visible={isEditSupplierModalVisible} animationType="slide" presentationStyle="pageSheet">
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <SafeAreaView style={styles.modalContainer}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
             <View style={styles.modalHeader}>
               <TouchableOpacity onPress={() => setIsEditSupplierModalVisible(false)}><Ionicons name="close" size={28} color="#000" /></TouchableOpacity>
               <Text style={styles.headerTitle}>Gestisci Fornitore</Text>
@@ -1064,14 +1062,14 @@ export default function WarehouseScreen() {
                 <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16 }}>Salva Dettagli Contatto</Text>
               </TouchableOpacity>
             </ScrollView>
-          </KeyboardAvoidingView>
         </SafeAreaView>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* --- MODALE TRASFERISCI PRODOTTI --- */}
       <Modal visible={isTransferModalVisible} transparent animationType="fade">
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <TouchableOpacity activeOpacity={1} style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }} onPress={() => Keyboard.dismiss()}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 40 }} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets={true}>
             <TouchableWithoutFeedback>
               <View style={styles.modalSmallBox}>
                 <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 16, textAlign: 'center' }}>Trasferisci Prodotti</Text>
@@ -1102,8 +1100,8 @@ export default function WarehouseScreen() {
                 </View>
               </View>
             </TouchableWithoutFeedback>
-          </TouchableOpacity>
-        </KeyboardAvoidingView>
+          </ScrollView>
+        </View>
       </Modal>
 
     </SafeAreaView>

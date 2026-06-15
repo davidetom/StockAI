@@ -64,125 +64,126 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      <ScrollView 
         style={styles.content}
+        showsVerticalScrollIndicator={false} 
+        contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}
+        automaticallyAdjustKeyboardInsets={true}
+        keyboardShouldPersistTaps="handled"
       >
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}>
-          {/* Logo e Titolo */}
-          <View style={styles.headerContainer}>
-            <Text style={styles.subtitleAcronym}>Pantry Nimble Notation</Text>
-            <View style={styles.logoRow}>
-              <Image source={require('../../assets/icon.png')} style={styles.iconImageSmall} />
-              <Text style={styles.titleElegant}>PaNiNo</Text>
+        {/* Logo e Titolo */}
+        <View style={styles.headerContainer}>
+          <Text style={styles.subtitleAcronym}>Pantry Nimble Notation</Text>
+          <View style={styles.logoRow}>
+            <Image source={require('../../assets/icon.png')} style={styles.iconImageSmall} />
+            <Text style={styles.titleElegant}>PaNiNo</Text>
+          </View>
+          <Text style={styles.subtitle}>{isLoginMode ? 'Il tuo magazzino intelligente' : 'Crea il tuo account'}</Text>
+        </View>
+
+        {/* Form di Auth */}
+        <View style={styles.formContainer}>
+
+          {!isLoginMode && (
+            <View style={styles.localeSection}>
+              <Text style={styles.sectionLabel}>Locale</Text>
+
+              <View style={styles.toggleContainer}>
+                <TouchableOpacity
+                  style={[styles.toggleBtn, !isNewLocale && styles.toggleBtnActive]}
+                  onPress={() => setIsNewLocale(false)}
+                >
+                  <Text style={[styles.toggleText, !isNewLocale && styles.toggleTextActive]}>Unisciti a esistente</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.toggleBtn, isNewLocale && styles.toggleBtnActive]}
+                  onPress={() => setIsNewLocale(true)}
+                >
+                  <Text style={[styles.toggleText, isNewLocale && styles.toggleTextActive]}>Nuovo Locale</Text>
+                </TouchableOpacity>
+              </View>
+
+              {isNewLocale ? (
+                <View style={styles.inputContainer}>
+                  <Ionicons name="business-outline" size={20} color="#666" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Nome del Nuovo Locale"
+                    placeholderTextColor="#999"
+                    value={newLocaleName}
+                    onChangeText={setNewLocaleName}
+                  />
+                </View>
+              ) : (
+                <View style={{ marginBottom: 16 }}>
+                  {locali.length === 0 ? (
+                    <Text style={{ color: '#666', fontSize: 13 }}>Nessun locale trovato. Creane uno nuovo.</Text>
+                  ) : (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 50 }}>
+                      {locali.map(loc => (
+                        <TouchableOpacity
+                          key={loc.id}
+                          style={[styles.localeChip, selectedLocaleId === loc.id && styles.localeChipActive]}
+                          onPress={() => setSelectedLocaleId(loc.id)}
+                        >
+                          <Text style={{ color: selectedLocaleId === loc.id ? '#DB7F18' : '#333' }}>{loc.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  )}
+                </View>
+              )}
             </View>
-            <Text style={styles.subtitle}>{isLoginMode ? 'Il tuo magazzino intelligente' : 'Crea il tuo account'}</Text>
+          )}
+
+          <View style={styles.inputContainer}>
+            <Ionicons name="mail-outline" size={20} color="#666" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor="#999"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
           </View>
 
-          {/* Form di Auth */}
-          <View style={styles.formContainer}>
+          <View style={styles.inputContainer}>
+            <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor="#999"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+          </View>
 
-            {!isLoginMode && (
-              <View style={styles.localeSection}>
-                <Text style={styles.sectionLabel}>Locale</Text>
+          <TouchableOpacity style={styles.btnManager} onPress={handleAuth}>
+            <Text style={styles.btnManagerText}>{isLoginMode ? 'Accedi' : 'Registrati'}</Text>
+            <Ionicons name="arrow-forward-outline" size={20} color="#FFF" style={{ marginLeft: 8 }} />
+          </TouchableOpacity>
+        </View>
 
-                <View style={styles.toggleContainer}>
-                  <TouchableOpacity
-                    style={[styles.toggleBtn, !isNewLocale && styles.toggleBtnActive]}
-                    onPress={() => setIsNewLocale(false)}
-                  >
-                    <Text style={[styles.toggleText, !isNewLocale && styles.toggleTextActive]}>Unisciti a esistente</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.toggleBtn, isNewLocale && styles.toggleBtnActive]}
-                    onPress={() => setIsNewLocale(true)}
-                  >
-                    <Text style={[styles.toggleText, isNewLocale && styles.toggleTextActive]}>Nuovo Locale</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {isNewLocale ? (
-                  <View style={styles.inputContainer}>
-                    <Ionicons name="business-outline" size={20} color="#666" style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Nome del Nuovo Locale"
-                      placeholderTextColor="#999"
-                      value={newLocaleName}
-                      onChangeText={setNewLocaleName}
-                    />
-                  </View>
-                ) : (
-                  <View style={{ marginBottom: 16 }}>
-                    {locali.length === 0 ? (
-                      <Text style={{ color: '#666', fontSize: 13 }}>Nessun locale trovato. Creane uno nuovo.</Text>
-                    ) : (
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 50 }}>
-                        {locali.map(loc => (
-                          <TouchableOpacity
-                            key={loc.id}
-                            style={[styles.localeChip, selectedLocaleId === loc.id && styles.localeChipActive]}
-                            onPress={() => setSelectedLocaleId(loc.id)}
-                          >
-                            <Text style={{ color: selectedLocaleId === loc.id ? '#DB7F18' : '#333' }}>{loc.name}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    )}
-                  </View>
-                )}
-              </View>
-            )}
-
-            <View style={styles.inputContainer}>
-              <Ionicons name="mail-outline" size={20} color="#666" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Email"
-                placeholderTextColor="#999"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Password"
-                placeholderTextColor="#999"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                autoCapitalize="none"
-              />
-            </View>
-
-            <TouchableOpacity style={styles.btnManager} onPress={handleAuth}>
-              <Text style={styles.btnManagerText}>{isLoginMode ? 'Accedi' : 'Registrati'}</Text>
-              <Ionicons name="arrow-forward-outline" size={20} color="#FFF" style={{ marginLeft: 8 }} />
+        {/* Links Footer */}
+        <View style={styles.footerLinks}>
+          {isLoginMode && (
+            <TouchableOpacity>
+              <Text style={styles.linkBlue}>Password dimenticata?</Text>
+            </TouchableOpacity>
+          )}
+          <View style={{ flexDirection: 'row', marginTop: 24 }}>
+            <Text style={styles.footerText}>{isLoginMode ? 'Non hai un account? ' : 'Hai già un account? '}</Text>
+            <TouchableOpacity onPress={() => setIsLoginMode(!isLoginMode)}>
+              <Text style={styles.linkBlueBold}>{isLoginMode ? 'Registrati' : 'Accedi'}</Text>
             </TouchableOpacity>
           </View>
-
-          {/* Links Footer */}
-          <View style={styles.footerLinks}>
-            {isLoginMode && (
-              <TouchableOpacity>
-                <Text style={styles.linkBlue}>Password dimenticata?</Text>
-              </TouchableOpacity>
-            )}
-            <View style={{ flexDirection: 'row', marginTop: 24 }}>
-              <Text style={styles.footerText}>{isLoginMode ? 'Non hai un account? ' : 'Hai già un account? '}</Text>
-              <TouchableOpacity onPress={() => setIsLoginMode(!isLoginMode)}>
-                <Text style={styles.linkBlueBold}>{isLoginMode ? 'Registrati' : 'Accedi'}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
