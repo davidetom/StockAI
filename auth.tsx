@@ -27,6 +27,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           role: data.role,
           status: data.status,
           locale_id: data.locale_id,
+          username: data.username,
           name: supabaseUser.user_metadata?.name || 'Utente',
         };
       }
@@ -79,7 +80,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  const register = async (email: string, password: string, localeName: string, isNewLocale: boolean, existingLocaleId?: string) => {
+  const register = async (email: string, password: string, username: string, localeName: string, isNewLocale: boolean, existingLocaleId?: string) => {
     setIsLoading(true);
     isRegistering = true;
     
@@ -131,7 +132,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           locale_id: localeId,
           role,
           status,
-          email
+          email,
+          username
         });
         
       if (profileError) throw profileError;
@@ -142,6 +144,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         role,
         status,
         locale_id: localeId,
+        username,
         name: authData.user.user_metadata?.name || 'Utente'
       });
 

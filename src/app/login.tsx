@@ -12,6 +12,7 @@ export default function LoginScreen() {
   // Stati per i campi di input
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('');
 
   // Stati per registrazione
   const [locali, setLocali] = useState<any[]>([]);
@@ -46,7 +47,11 @@ export default function LoginScreen() {
           Alert.alert('Errore', 'Seleziona un locale esistente o creane uno nuovo.');
           return;
         }
-        await register(email, password, newLocaleName, isNewLocale, selectedLocaleId);
+        if (!username.trim()) {
+          Alert.alert('Errore', 'Inserisci un nome utente.');
+          return;
+        }
+        await register(email, password, username, newLocaleName, isNewLocale, selectedLocaleId);
         Alert.alert('Successo', 'Registrazione completata!');
       }
     } catch (error: any) {
@@ -133,6 +138,20 @@ export default function LoginScreen() {
                   )}
                 </View>
               )}
+            </View>
+          )}
+
+          {!isLoginMode && (
+            <View style={styles.inputContainer}>
+              <Ionicons name="person-outline" size={20} color="#666" style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Nome Utente (es. Mario)"
+                placeholderTextColor="#999"
+                value={username}
+                onChangeText={setUsername}
+                autoCapitalize="words"
+              />
             </View>
           )}
 

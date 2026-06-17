@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -46,11 +47,29 @@ export default function SettingsScreen() {
     if (data) setLocaleName(data.name);
   };
 
-  const fetchStaff = async () => {
+  const fetchStaff = async (forceRefresh = false) => {
     if (!user?.locale_id) return;
+
+    const STAFF_CACHE_KEY = `@panino_staff_${user.locale_id}`;
+
+    if (!forceRefresh) {
+      try {
+        const cached = await AsyncStorage.getItem(STAFF_CACHE_KEY);
+        if (cached) {
+          setStaff(JSON.parse(cached));
+          return;
+        }
+      } catch (e) {}
+    }
+
     setIsLoadingStaff(true);
     const { data, error } = await supabase.from('profiles').select('*').eq('locale_id', user.locale_id);
-    if (data) setStaff(data);
+    if (data) {
+      setStaff(data);
+      try {
+        await AsyncStorage.setItem(STAFF_CACHE_KEY, JSON.stringify(data));
+      } catch (e) {}
+    }
     setIsLoadingStaff(false);
   };
 
@@ -101,7 +120,7 @@ export default function SettingsScreen() {
   // Azioni PROPRIETARIO
   const handleApprove = async (id: string) => {
     await supabase.from('profiles').update({ status: 'approved' }).eq('id', id);
-    fetchStaff();
+    fetchStaff(true);
   };
 
   const handleReject = async (id: string) => {
@@ -110,7 +129,7 @@ export default function SettingsScreen() {
       {
         text: "Rifiuta", style: "destructive", onPress: async () => {
           await supabase.from('profiles').delete().eq('id', id);
-          fetchStaff();
+          fetchStaff(true);
         }
       }
     ]);
@@ -128,13 +147,27 @@ export default function SettingsScreen() {
       {
         text: "Conferma", onPress: async () => {
           await supabase.from('profiles').update({ role: newRole }).eq('id', member.id);
-          fetchStaff();
+          fetchStaff(true);
         }
       }
     ]);
   };
 
-  const activeStaff = staff.filter(s => s.status === 'approved');
+  const roleWeight: Record<string, number> = { 'PROPRIETARIO': 3, 'MANAGER': 2, 'STAFF': 1 };
+  
+  const activeStaff = staff
+    .filter(s => s.status === 'approved')
+    .sort((a, b) => {
+      const weightA = roleWeight[a.role] || 0;
+      const weightB = roleWeight[b.role] || 0;
+      if (weightA !== weightB) {
+        return weightB - weightA; // Ruoli più alti prima
+      }
+      const nameA = (a.username || a.email || '').toLowerCase();
+      const nameB = (b.username || b.email || '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+
   const pendingStaff = staff.filter(s => s.status === 'pending');
 
   return (
@@ -160,8 +193,9 @@ export default function SettingsScreen() {
                 <Ionicons name="person-circle-outline" size={24} color="#DB7F18" />
               </View>
               <View style={styles.textContainer}>
-                <Text style={styles.infoLabel}>Email</Text>
-                <Text style={styles.infoValue}>{user?.email || 'Nessuna email'}</Text>
+                <Text style={styles.infoLabel}>Account</Text>
+                <Text style={styles.infoValue}>{user?.username || 'Nome Utente Non Impostato'}</Text>
+                <Text style={{ fontSize: 13, color: '#666', marginTop: 2 }}>{user?.email || 'Nessuna email'}</Text>
               </View>
             </View>
 
@@ -191,7 +225,8 @@ export default function SettingsScreen() {
                       <View key={member.id}>
                         <View style={styles.staffRow}>
                           <View style={styles.textContainer}>
-                            <Text style={styles.infoValue}>{member.email || member.id}</Text>
+                            <Text style={styles.infoValue}>{member.username ? member.username : (member.email || member.id)}</Text>
+                            {member.username && <Text style={{ fontSize: 13, color: '#666', marginBottom: 2 }}>{member.email}</Text>}
                             <Text style={styles.infoLabel}>Vuole unirsi al locale</Text>
                           </View>
                           <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -210,7 +245,12 @@ export default function SettingsScreen() {
                 </>
               )}
 
-              <Text style={styles.sectionTitle}>STAFF ATTIVO</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, marginBottom: 8, marginLeft: 4, marginRight: 8 }}>
+                <Text style={[styles.sectionTitle, { marginTop: 0, marginBottom: 0, marginLeft: 0 }]}>STAFF ATTIVO</Text>
+                <TouchableOpacity onPress={() => fetchStaff(true)} style={{ padding: 4, backgroundColor: '#FFF', borderRadius: 6, borderWidth: 1, borderColor: '#CCC', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 }}>
+                  <Ionicons name="refresh-outline" size={16} color="#333" />
+                </TouchableOpacity>
+              </View>
               <View style={styles.card}>
                 {isLoadingStaff ? (
                   <ActivityIndicator style={{ padding: 20 }} />
@@ -221,7 +261,8 @@ export default function SettingsScreen() {
                     <View key={member.id}>
                       <TouchableOpacity style={styles.staffRow} onPress={() => handleChangeRole(member)}>
                         <View style={styles.textContainer}>
-                          <Text style={styles.infoValue}>{member.email || member.id} {member.id === user.id && '(Tu)'}</Text>
+                          <Text style={styles.infoValue}>{member.username ? member.username : (member.email || member.id)} {member.id === user.id && '(Tu)'}</Text>
+                          {member.username && <Text style={{ fontSize: 13, color: '#666', marginBottom: 2 }}>{member.email}</Text>}
                           <Text style={[styles.infoLabel, { color: member.role === 'PROPRIETARIO' ? '#D93025' : member.role === 'MANAGER' ? '#DB7F18' : '#888' }]}>
                             {member.role}
                           </Text>
