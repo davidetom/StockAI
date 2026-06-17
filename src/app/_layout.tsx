@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { AuthProvider, useAuth } from '../../auth'; 
 import { initDB } from '../db';
-import { SafeAreaView, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, SafeAreaView, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 // Componente per proteggere le rotte
@@ -29,6 +29,15 @@ function RootLayoutNav() {
       router.replace('/' as any);
     }
   }, [user, isLoading, segments]);
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8F5E6' }}>
+        <ActivityIndicator size="large" color="#DB7F18" />
+        <Text style={{ marginTop: 12, color: '#666', fontWeight: 'bold' }}>Caricamento in corso...</Text>
+      </View>
+    );
+  }
 
   if (user && user.status === 'pending') {
     return (

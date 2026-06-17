@@ -55,6 +55,7 @@ export default function WarehouseScreen() {
   const [products, setProducts] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isUpdatingCategories, setIsUpdatingCategories] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
 
   // Stati Onboarding & Faldoni
   const [isGeneratingTemplate, setIsGeneratingTemplate] = useState(false);
@@ -106,7 +107,11 @@ export default function WarehouseScreen() {
   };
 
   useFocusEffect(
-    React.useCallback(() => { loadData(); }, [])
+    React.useCallback(() => {
+      if (user?.locale_id) {
+        loadData();
+      }
+    }, [user?.locale_id])
   );
 
   const loadData = async () => {
@@ -130,6 +135,8 @@ export default function WarehouseScreen() {
       setSupplierEmails(emails);
     } catch (e) {
       console.error('Errore nel caricamento canali', e);
+    } finally {
+      setIsInitialLoading(false);
     }
   };
 
@@ -636,7 +643,11 @@ export default function WarehouseScreen() {
       )}
 
       {/* --- ONBOARDING MAGICO --- */}
-      {products.length === 0 && viewMode === 'products' ? (
+      {isInitialLoading ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#DB7F18" />
+        </View>
+      ) : products.length === 0 && viewMode === 'products' ? (
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.emptyStateContainer} keyboardShouldPersistTaps="handled">
             <View style={styles.emptyIconBg}>

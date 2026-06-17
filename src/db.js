@@ -259,14 +259,26 @@ export const completeTransitOrder = async (orderId, items) => {
   try {
     await supabase.from('transit_orders').delete().eq('id', orderId);
 
-    for (const item of items) {
-      const { data: product } = await supabase.from('products').select('current_stock').eq('id', item.id).single();
+    const itemIds = items.map(i => i.id);
+    if (itemIds.length === 0) return;
+
+    // 1. Fetch current stock for all items in one query
+    const { data: products } = await supabase.from('products').select('id, current_stock').in('id', itemIds);
+    if (!products) return;
+
+    // 2. Prepare update promises
+    const updatePromises = items.map(item => {
+      const product = products.find(p => p.id === item.id);
       if (product) {
-        await supabase.from('products').update({
+        return supabase.from('products').update({
           current_stock: Number(product.current_stock) + Number(item.orderQuantity)
         }).eq('id', item.id);
       }
-    }
+      return Promise.resolve();
+    });
+
+    // 3. Execute all updates in parallel
+    await Promise.all(updatePromises);
   } catch (e) {
     console.error('Errore completeTransitOrder', e);
   }
@@ -277,7 +289,17 @@ export const completeTransitOrderWithScan = async (orderId, scannedItems, suppli
     const locale_id = await getLocaleId();
     await supabase.from('transit_orders').delete().eq('id', orderId);
 
-    for (const item of scannedItems) {
+    const existingItems = scannedItems.filter(i => !i.isNew);
+    const existingItemIds = existingItems.map(i => i.id);
+
+    // 1. Fetch current stock for all existing items in one query
+    let products = [];
+    if (existingItemIds.length > 0) {
+      const { data } = await supabase.from('products').select('id, current_stock').in('id', existingItemIds);
+      products = data || [];
+    }
+
+    const promises = scannedItems.map(item => {
       if (item.isNew) {
         const newProd = {
           locale_id,
@@ -290,16 +312,20 @@ export const completeTransitOrderWithScan = async (orderId, scannedItems, suppli
           category: item.category,
           icon: item.icon
         };
-        await supabase.from('products').insert(newProd);
+        return supabase.from('products').insert(newProd);
       } else {
-        const { data: product } = await supabase.from('products').select('current_stock').eq('id', item.id).single();
+        const product = products.find(p => p.id === item.id);
         if (product) {
-          await supabase.from('products').update({
+          return supabase.from('products').update({
             current_stock: Number(product.current_stock) + Number(item.quantity)
           }).eq('id', item.id);
         }
       }
-    }
+      return Promise.resolve();
+    });
+
+    // 2. Execute all updates and inserts in parallel
+    await Promise.all(promises);
   } catch (e) {
     console.error('Errore completeTransitOrderWithScan', e);
   }

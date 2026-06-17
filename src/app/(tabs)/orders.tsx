@@ -23,6 +23,7 @@ export default function OrdersScreen() {
   const [transitOrders, setTransitOrders] = useState<any[]>([]);
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [supplierChannels, setSupplierChannels] = useState<Record<string, string>>({});
   const [supplierPhones, setSupplierPhones] = useState<Record<string, string>>({});
   const [supplierEmails, setSupplierEmails] = useState<Record<string, string>>({});
@@ -40,7 +41,11 @@ export default function OrdersScreen() {
   const [localeName, setLocaleName] = useState('Panino');
 
   useFocusEffect(
-    React.useCallback(() => { loadData(); }, [])
+    React.useCallback(() => {
+      if (user?.locale_id) {
+        loadData();
+      }
+    }, [user?.locale_id])
   );
 
   const loadData = async () => {
@@ -73,6 +78,8 @@ export default function OrdersScreen() {
       setSupplierEmails(emails);
     } catch (e) {
       console.error('Errore nel caricamento canali', e);
+    } finally {
+      setIsInitialLoading(false);
     }
   };
 
@@ -325,7 +332,11 @@ export default function OrdersScreen() {
         </TouchableOpacity>
       </View>
 
-      {currentList.length === 0 ? (
+      {isInitialLoading ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#DB7F18" />
+        </View>
+      ) : currentList.length === 0 ? (
         <View style={styles.emptyState}>
           <Text style={{ color: '#666' }}>Nessun ordine in questa sezione.</Text>
         </View>

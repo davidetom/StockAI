@@ -31,11 +31,13 @@ export default function SettingsScreen() {
   useFocusEffect(
     React.useCallback(() => {
       loadApiKey();
-      fetchLocaleInfo();
-      if (user?.role === 'PROPRIETARIO') {
-        fetchStaff();
+      if (user?.locale_id) {
+        fetchLocaleInfo();
+        if (user?.role === 'PROPRIETARIO') {
+          fetchStaff();
+        }
       }
-    }, [user])
+    }, [user?.locale_id, user?.role])
   );
 
   const fetchLocaleInfo = async () => {
