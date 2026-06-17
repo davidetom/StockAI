@@ -213,21 +213,23 @@ export default function ChatScreen() {
           <View style={styles.confirmationCard}>
             <Text style={styles.confirmText}>{pendingAction.text}</Text>
 
-            {pendingAction.operations.map((op: any, idx: number) => (
-              <View key={idx} style={styles.confirmHighlightBox}>
-                <Ionicons name="cube-outline" size={18} color="#DB7F18" style={{ marginRight: 6 }} />
-                <Text style={styles.confirmHighlightText}>{op.productName}</Text>
-                {op.updateType === 'absolute' ? (
-                  <Text style={[styles.confirmHighlightQty, { color: '#333' }]}>
-                    {Number(op.quantityChange)} {op.unit}
-                  </Text>
-                ) : (
-                  <Text style={[styles.confirmHighlightQty, { color: op.quantityChange > 0 ? '#1E8E3E' : '#D93025' }]}>
-                    {op.quantityChange > 0 ? '+' : ''}{op.quantityChange} {op.unit}
-                  </Text>
-                )}
-              </View>
-            ))}
+            <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={true}>
+              {pendingAction.operations.map((op: any, idx: number) => (
+                <View key={idx} style={styles.confirmHighlightBox}>
+                  <Ionicons name="cube-outline" size={18} color="#DB7F18" style={{ marginRight: 6 }} />
+                  <Text style={styles.confirmHighlightText}>{op.productName}</Text>
+                  {op.updateType === 'absolute' ? (
+                    <Text style={[styles.confirmHighlightQty, { color: '#333' }]}>
+                      {Number(op.quantityChange)} {op.unit}
+                    </Text>
+                  ) : (
+                    <Text style={[styles.confirmHighlightQty, { color: op.quantityChange > 0 ? '#1E8E3E' : '#D93025' }]}>
+                      {op.quantityChange > 0 ? '+' : ''}{op.quantityChange} {op.unit}
+                    </Text>
+                  )}
+                </View>
+              ))}
+            </ScrollView>
 
             <Text style={styles.confirmQuestion}>Confermi le operazioni?</Text>
             <View style={styles.confirmButtonsRow}>

@@ -88,24 +88,36 @@ export default function OrdersScreen() {
     setTimeout(() => setToastMsg(null), 3000);
   };
 
-  const generateOrderText = (order: any) => {
-    let text = `Buongiorno, *${order.supplierName}*.\n\nDi seguito il nostro ordine ${order.id}:\n\n`;
-    order.items.forEach((item: any) => {
-      text += `- ${item.name} — *${parseFloat(Number(item.orderQuantity).toFixed(2))} ${item.unit}*\n`;
-    });
-    text += `\nGrazie,\nIl Gestore`;
-    return text;
+  const generateOrderText = (order: any, channel: string = 'WhatsApp') => {
+    if (channel === 'Email') {
+      let text = `Buongiorno ${order.supplierName},\n\nCon la presente inviamo il riepilogo del nostro ordine (Rif. ${order.display_id || order.id}):\n\n`;
+      text += `--- DETTAGLIO ORDINE ---\n`;
+      order.items.forEach((item: any) => {
+        text += `• ${item.name}: ${parseFloat(Number(item.orderQuantity).toFixed(2))} ${item.unit}\n`;
+      });
+      text += `------------------------\n\n`;
+      text += `Restiamo in attesa di una vostra conferma.\n\nCordiali saluti,\n${localeName}`;
+      return text;
+    } else {
+      let text = `Buongiorno, *${order.supplierName}*.\n\nDi seguito il nostro ordine ${order.display_id || order.id}:\n\n`;
+      order.items.forEach((item: any) => {
+        text += `- ${item.name} — *${parseFloat(Number(item.orderQuantity).toFixed(2))} ${item.unit}*\n`;
+      });
+      text += `\nGrazie,\n${localeName}`;
+      return text;
+    }
   };
 
   const handleCopy = async (order: any) => {
-    const text = generateOrderText(order);
+    const channel = supplierChannels[order.supplierName] || 'WhatsApp';
+    const text = generateOrderText(order, channel);
     await Clipboard.setStringAsync(text);
     showToast("✅ Copiato negli appunti");
   };
 
   const handleSendOrder = async (order: any) => {
     const channel = supplierChannels[order.supplierName] || 'WhatsApp';
-    const text = encodeURIComponent(generateOrderText(order));
+    let text = encodeURIComponent(generateOrderText(order, channel));
     const phone = supplierPhones[order.supplierName] || '';
     const email = supplierEmails[order.supplierName] || '';
 
@@ -114,14 +126,16 @@ export default function OrdersScreen() {
       const cleanPhone = phone.replace(/[^0-9+]/g, '');
       url = cleanPhone ? `whatsapp://send?phone=${cleanPhone}&text=${text}` : `whatsapp://send?text=${text}`;
     } else if (channel === 'Email') {
+      // Fix fondamentale: le app di mail (es. Gmail/Apple Mail) richiedono %0D%0A per andare a capo
+      text = text.replace(/%0A/g, '%0D%0A');
       const subject = encodeURIComponent(`Ordine ${localeName}`);
       url = email ? `mailto:${email}?subject=${subject}&body=${text}` : `mailto:?subject=${subject}&body=${text}`;
     } else if (channel === 'Telefono') {
-      await Clipboard.setStringAsync(generateOrderText(order));
+      await Clipboard.setStringAsync(generateOrderText(order, channel));
       showToast("✅ Testo ordine copiato negli appunti!");
       url = `tel:${phone}`;
     } else {
-      await Clipboard.setStringAsync(generateOrderText(order));
+      await Clipboard.setStringAsync(generateOrderText(order, channel));
       showToast("✅ Testo ordine copiato negli appunti!");
     }
 
@@ -504,7 +518,7 @@ export default function OrdersScreen() {
             </View>
             <Text style={styles.sectionLabel}>MESSAGGIO</Text>
             <View style={styles.previewTextBox}>
-              <Text style={{ fontSize: 15, lineHeight: 22 }}>{activeOrder && generateOrderText(activeOrder)}</Text>
+              <Text style={{ fontSize: 15, lineHeight: 22 }}>{activeOrder && generateOrderText(activeOrder, supplierChannels[activeOrder.supplierName] || 'WhatsApp')}</Text>
             </View>
           </ScrollView>
           {activeTab === 'drafts' && (
