@@ -207,11 +207,6 @@ export default function LoginScreen() {
 
         {/* Links Footer */}
         <View style={styles.footerLinks}>
-          {isLoginMode && (
-            <TouchableOpacity>
-              <Text style={styles.linkBlue}>Password dimenticata?</Text>
-            </TouchableOpacity>
-          )}
           <View style={{ flexDirection: 'row', marginTop: 24 }}>
             <Text style={styles.footerText}>{isLoginMode ? 'Non hai un account? ' : 'Hai già un account? '}</Text>
             <TouchableOpacity onPress={() => setIsLoginMode(!isLoginMode)}>
