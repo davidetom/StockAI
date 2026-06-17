@@ -19,6 +19,7 @@ export default function LoginScreen() {
   const [isNewLocale, setIsNewLocale] = useState(false);
   const [selectedLocaleId, setSelectedLocaleId] = useState<string>('');
   const [newLocaleName, setNewLocaleName] = useState('');
+  const [searchLocaleName, setSearchLocaleName] = useState('');
 
   useEffect(() => {
     if (!isLoginMode) {
@@ -121,20 +122,36 @@ export default function LoginScreen() {
                 </View>
               ) : (
                 <View style={{ marginBottom: 16 }}>
-                  {locali.length === 0 ? (
-                    <Text style={{ color: '#666', fontSize: 13 }}>Nessun locale trovato. Creane uno nuovo.</Text>
-                  ) : (
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 50 }}>
-                      {locali.map(loc => (
-                        <TouchableOpacity
-                          key={loc.id}
-                          style={[styles.localeChip, selectedLocaleId === loc.id && styles.localeChipActive]}
-                          onPress={() => setSelectedLocaleId(loc.id)}
-                        >
-                          <Text style={{ color: selectedLocaleId === loc.id ? '#DB7F18' : '#333' }}>{loc.name}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
+                  <View style={styles.inputContainer}>
+                    <Ionicons name="search-outline" size={20} color="#666" style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Cerca il nome del locale..."
+                      placeholderTextColor="#999"
+                      value={searchLocaleName}
+                      onChangeText={(text) => {
+                        setSearchLocaleName(text);
+                        setSelectedLocaleId(''); // Deseleziona quando cambia la ricerca
+                      }}
+                    />
+                  </View>
+                  
+                  {searchLocaleName.trim().length > 0 && (
+                    locali.filter(l => l.name.toLowerCase().includes(searchLocaleName.toLowerCase())).length === 0 ? (
+                      <Text style={{ color: '#666', fontSize: 13, marginTop: -8, marginBottom: 8, paddingHorizontal: 4 }}>Nessun locale trovato.</Text>
+                    ) : (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 50, marginTop: -8, marginBottom: 8 }}>
+                        {locali.filter(l => l.name.toLowerCase().includes(searchLocaleName.toLowerCase())).map(loc => (
+                          <TouchableOpacity
+                            key={loc.id}
+                            style={[styles.localeChip, selectedLocaleId === loc.id && styles.localeChipActive]}
+                            onPress={() => setSelectedLocaleId(loc.id)}
+                          >
+                            <Text style={{ color: selectedLocaleId === loc.id ? '#DB7F18' : '#333' }}>{loc.name}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    )
                   )}
                 </View>
               )}
